@@ -6,10 +6,21 @@ eval "$(mise activate bash)"
 mise fmt
 mise install
 
-# Run shared lint tasks
-mise run gha-lint
+# Python
+uv sync --extra dev
+uv run pip-licenses --partial-match --allow-only="Apache;BSD;CNRI-Python;ISC;MIT;MPL;PSF;Python Software Foundation"
+uv audit
+ruff check --fix
+ruff format
+ty check
+if [[ -n "$CI" ]]; then
+  uv run pytest --cov --cov-report=term --cov-report=xml
+else
+  uv run pytest --cov --cov-report=term
+fi
 
-# Add repo-specific lint here
+# Shared lint tasks
+mise run gha-lint
 
 # Check for uncommitted changes
 git diff --exit-code

@@ -8,7 +8,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   validate:
-    uses: iwamot/workflows/.github/workflows/validate.yml@33f77c21f5d0189c92454aa0b8b2a809549bc598 # v1.0.0
+    uses: iwamot/workflows/.github/workflows/validate-with-coverage.yml@33f77c21f5d0189c92454aa0b8b2a809549bc598 # v1.0.0
