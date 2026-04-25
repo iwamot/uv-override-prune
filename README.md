@@ -39,7 +39,7 @@ Example output:
 [PRUNE] httpx>=0.1.0       0.28.1
 [SKIP]  foo==1.0           -
 
-Run with --fix to prune them from pyproject.toml.
+Run with --fix to prune entries marked [PRUNE].
 ```
 
 Exit codes:

@@ -6,18 +6,17 @@ def _entry(section: str, entry: str, status: str) -> EntryResult:
     return EntryResult(
         section=section,
         entry=entry,
-        result=Result(status=status, detail="", value=""),
+        result=Result(status=status, value=""),
     )
 
 
-def test_entry_result_exposes_status_and_detail():
+def test_entry_result_exposes_status():
     er = EntryResult(
         section="override-dependencies",
         entry="foo>=1.0",
-        result=Result(status="prune", detail="natural resolution 2.0 ...", value="2.0"),
+        result=Result(status="prune", value="2.0"),
     )
     assert er.status == "prune"
-    assert er.detail == "natural resolution 2.0 ..."
 
 
 def test_audit_report_prunable_filters():

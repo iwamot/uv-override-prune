@@ -1,8 +1,7 @@
 """High-level orchestration: audit() and apply_fix().
 
-This module wires the pure logic in `analyze` and `rewrite` to actual
-file I/O and the `uv lock` subprocess. It is the natural entry point
-for library, GitHub Action, and CLI consumers.
+Wires the pure logic in `analyze` and `rewrite` to actual file I/O
+and the `uv lock` subprocess for the CLI.
 """
 
 import shutil
@@ -37,10 +36,6 @@ class EntryResult:
     def status(self) -> str:
         return self.result.status
 
-    @property
-    def detail(self) -> str:
-        return self.result.detail
-
 
 @dataclass(frozen=True)
 class AuditReport:
@@ -64,10 +59,10 @@ class AuditReport:
         return out
 
 
-def _run_uv_lock(project_dir: Path) -> tuple[bool, str]:
+def _run_uv_lock(project_dir: Path) -> bool:
     uv_bin = shutil.which("uv")
     if uv_bin is None:
-        return False, "uv binary not found in PATH"
+        return False
     completed = subprocess.run(  # noqa: S603
         [uv_bin, "lock", "--project", str(project_dir), "--no-progress"],
         capture_output=True,
@@ -75,7 +70,7 @@ def _run_uv_lock(project_dir: Path) -> tuple[bool, str]:
         timeout=180,
         check=False,
     )
-    return completed.returncode == 0, completed.stderr
+    return completed.returncode == 0
 
 
 def _evaluate_entry(
@@ -86,20 +81,11 @@ def _evaluate_entry(
 ) -> Result:
     try:
         req = Requirement(entry)
-    except Exception as e:  # noqa: BLE001
-        return Result(
-            status="error",
-            detail=f"failed to parse specifier: {e}",
-            value="parse error",
-        )
+    except Exception:  # noqa: BLE001
+        return Result(status="error", value="parse error")
 
     if not is_pure_lower_bound(req):
-        ops = sorted({s.operator for s in req.specifier}) or ["(none)"]
-        return Result(
-            status="skip",
-            detail=f"not a pure lower bound (operators: {', '.join(ops)})",
-            value="-",
-        )
+        return Result(status="skip", value="-")
 
     modified_text = prepare_modified_text(
         original_text,
@@ -111,14 +97,8 @@ def _evaluate_entry(
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         (tmp_path / "pyproject.toml").write_text(modified_text)
-        ok, stderr = _run_uv_lock(tmp_path)
-        if not ok:
-            last = (stderr.strip().splitlines() or ["(no stderr)"])[-1]
-            return Result(
-                status="error",
-                detail=f"uv lock failed: {last}",
-                value="lock failed",
-            )
+        if not _run_uv_lock(tmp_path):
+            return Result(status="error", value="lock failed")
         lock_doc = tomlkit.parse((tmp_path / "uv.lock").read_text())
 
     resolved = find_resolved_version(lock_doc, req.name)

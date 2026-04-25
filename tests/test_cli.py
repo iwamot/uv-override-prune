@@ -8,12 +8,11 @@ def _entry(
     entry: str,
     status: str,
     value: str = "",
-    detail: str = "",
 ) -> EntryResult:
     return EntryResult(
         section=section,
         entry=entry,
-        result=Result(status=status, detail=detail, value=value),
+        result=Result(status=status, value=value),
     )
 
 
@@ -27,7 +26,7 @@ def test_format_per_entry_groups_by_section():
     )
     output = format_per_entry(report)
     assert "=== override-dependencies (2 entries) ===" in output
-    assert "=== constraint-dependencies (1 entries) ===" in output
+    assert "=== constraint-dependencies (1 entry) ===" in output
 
 
 def test_format_per_entry_renders_status_labels():

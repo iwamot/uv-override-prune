@@ -18,7 +18,6 @@ class Result:
     """The classification verdict for a single override/constraint entry."""
 
     status: str  # "prune" | "keep" | "skip" | "error"
-    detail: str  # long-form explanation
     value: str  # short value: resolved version, "(unused)", "-", or error tag
 
 
@@ -35,22 +34,10 @@ def classify(req: Requirement, resolved: Version | None) -> Result:
     (i.e. nothing depends on it, so the override was vacuous).
     """
     if resolved is None:
-        return Result(
-            status="prune",
-            detail=f"{req.name} not required by any dep (constraint was vacuous)",
-            value="(unused)",
-        )
+        return Result(status="prune", value="(unused)")
     if req.specifier.contains(str(resolved), prereleases=True):
-        return Result(
-            status="prune",
-            detail=f"natural resolution {resolved} satisfies {req.specifier}",
-            value=str(resolved),
-        )
-    return Result(
-        status="keep",
-        detail=f"natural resolution would be {resolved} (violates {req.specifier})",
-        value=str(resolved),
-    )
+        return Result(status="prune", value=str(resolved))
+    return Result(status="keep", value=str(resolved))
 
 
 def find_resolved_version(
