@@ -25,7 +25,9 @@ def format_per_entry(report: AuditReport) -> str:
         by_section.setdefault(e.section, []).append(e)
     lines: list[str] = []
     for section, items in by_section.items():
-        lines.append(f"=== {section} ({len(items)} entries) ===")
+        n = len(items)
+        word = "entry" if n == 1 else "entries"
+        lines.append(f"=== {section} ({n} {word}) ===")
         entry_w = max(len(e.entry) for e in items)
         for e in items:
             label = _LABELS[e.status]
@@ -44,7 +46,7 @@ def main() -> int:
     parser.add_argument(
         "pyproject",
         nargs="?",
-        default="pyproject.toml",
+        default=None,
         type=Path,
         help="Path to pyproject.toml (default: ./pyproject.toml)",
     )
@@ -55,9 +57,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    pyproject_path = args.pyproject.resolve()
+    if args.pyproject is None:
+        pyproject_path = Path("pyproject.toml")
+        display_path = "./pyproject.toml"
+    else:
+        pyproject_path = args.pyproject
+        display_path = str(args.pyproject)
+
     if not pyproject_path.exists():
-        print(f"File not found: {pyproject_path}", file=sys.stderr)
+        print(f"File not found: {display_path}", file=sys.stderr)
         return 2
 
     report = audit(pyproject_path)
@@ -72,10 +80,10 @@ def main() -> int:
         apply_fix(pyproject_path, report.by_section())
         n = len(prunable)
         word = "entry" if n == 1 else "entries"
-        print(f"Pruned {n} {word} from {pyproject_path}.")
+        print(f"Pruned {n} {word} from {display_path}.")
         return 0
 
-    print("Run with --fix to prune them from pyproject.toml.")
+    print("Run with --fix to prune entries marked [PRUNE].")
     return 1
 
 
