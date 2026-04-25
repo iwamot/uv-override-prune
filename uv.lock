@@ -3,11 +3,11 @@ revision = 3
 requires-python = ">=3.11"
 
 [options]
-exclude-newer = "2026-04-24T11:53:34.873115141Z"
+exclude-newer = "2026-04-24T13:33:45.397648822Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
-uv-override-prune = { timestamp = "2026-04-25T11:53:34.873125169Z", span = "PT0S" }
+uv-override-prune = { timestamp = "2026-04-25T13:33:45.397656246Z", span = "PT0S" }
 
 [[package]]
 name = "colorama"
