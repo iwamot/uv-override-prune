@@ -10,28 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  pytest:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - run: uv sync --extra dev --python ${{ matrix.python }}
-      - run: uv run pytest
-
   compatibility:
-    needs:
-      - pytest
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    permissions: {}
-    steps:
-      - run: 'true'
+    uses: iwamot/workflows/.github/workflows/compatibility-python.yml@e699662bcd64cc1247041af9160393a07b5bcac5 # v1.2.0
+    with:
+      python-versions: '["3.11","3.12","3.13","3.14"]'
