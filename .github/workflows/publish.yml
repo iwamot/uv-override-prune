@@ -1,3 +1,7 @@
+# Do not move into a reusable workflow: PyPI Trusted Publishing
+# does not support reusable workflows (job_workflow_ref points
+# to the callee). See https://github.com/pypi/warehouse/issues/11096
+
 name: Publish
 
 on:
@@ -6,8 +10,21 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
-    uses: iwamot/workflows/.github/workflows/publish-pypi.yml@e699662bcd64cc1247041af9160393a07b5bcac5 # v1.2.0
+  publish-pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: false
+      - run: uv build
+      - run: uv publish
