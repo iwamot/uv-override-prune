@@ -8,12 +8,6 @@
 
 Detect prunable `override-dependencies` / `constraint-dependencies` entries in uv projects.
 
-## What it does
-
-uv lets you patch transitive dependency versions via `[tool.uv] override-dependencies` and `constraint-dependencies`. These are commonly added to work around issues in upstream packages (e.g. to force a CVE-patched minimum version that transitive deps don't yet require). As direct dependencies get updated over time, these entries can become unnecessary — but they tend to accumulate silently.
-
-`uv-override-prune` detects entries whose lower-bound constraint is already satisfied by natural resolution, so you can safely remove them.
-
 ## Install
 
 ```bash
@@ -26,7 +20,7 @@ Or run it without installing — useful for one-off checks:
 uvx uv-override-prune
 ```
 
-## CLI usage
+## Usage
 
 ```bash
 # Detect prunable entries (default)
@@ -55,6 +49,10 @@ Exit codes:
 | `0`  | No prunable entries (or `--fix` succeeded) |
 | `1`  | Prunable entries found (without `--fix`) |
 | `2`  | `pyproject.toml` not found |
+
+## Why
+
+uv lets you pin a transitive dependency version via `[tool.uv] override-dependencies` and `constraint-dependencies`. A common reason to reach for these is CVE mitigation: a vulnerability is disclosed in a transitive package, and you force the patched minimum version while waiting for direct deps to require it naturally. Once they catch up, the entry is no longer doing anything — but it's easy to forget which ones are still load-bearing, and stale overrides become a judgment cost at every audit or upgrade ("is this still needed, or just history?"). `uv-override-prune` answers that mechanically by checking whether each entry's lower bound is already satisfied by natural resolution.
 
 ## Scope
 
