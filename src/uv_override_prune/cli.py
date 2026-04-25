@@ -8,6 +8,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__
 from .core import AuditReport, EntryResult, apply_fix, audit
 
 _LABELS = {
@@ -54,6 +55,12 @@ def main() -> int:
         "--fix",
         action="store_true",
         help="Remove prunable entries from pyproject.toml in place",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     args = parser.parse_args()
 

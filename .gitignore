@@ -10,3 +10,4 @@ coverage.xml
 htmlcov/
 .pytest_cache/
 .ruff_cache/
+src/uv_override_prune/_version.py
