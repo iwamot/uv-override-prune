@@ -2,27 +2,12 @@ name: Publish
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+    tags: ['v*.*.*']
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: false
-      - run: uv build
-      - run: uv publish
+    uses: iwamot/workflows/.github/workflows/publish-pypi.yml@471bb812947616108999accbca3065012b71d221 # v1.1.0
