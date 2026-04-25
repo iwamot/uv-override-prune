@@ -39,11 +39,11 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/uv_override_prune/__init__.py"
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/uv_override_prune"]
