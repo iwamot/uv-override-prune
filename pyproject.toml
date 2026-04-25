@@ -52,6 +52,7 @@ packages = ["src/uv_override_prune"]
 exclude = [
     "/.codecov.yml",
     "/.github",
+    "/compatibility.sh",
     "/mise.toml",
     "/uv.lock",
     "/validate.sh",
