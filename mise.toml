@@ -4,6 +4,20 @@ min_version = "2026.4.8"
 install_before = "1d"
 
 [tools]
+python = "3.14.4"
+shellcheck = "0.11.0"
+
+[tools."aqua:astral-sh/ruff"]
+version = "0.15.12"
+install_before = "0d"
+
+[tools."aqua:astral-sh/ty"]
+version = "0.0.32"
+install_before = "0d"
+
+[tools."aqua:astral-sh/uv"]
+version = "0.11.7"
+install_before = "0d"
 
 [task_config]
 includes = [
