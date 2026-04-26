@@ -73,12 +73,53 @@ def _run_uv_lock(project_dir: Path) -> bool:
     return completed.returncode == 0
 
 
-def _evaluate_entry(
-    original_text: str,
+@dataclass(frozen=True)
+class AuditTargets:
+    """The parsed pyproject.toml input for an audit run.
+
+    Holds the original TOML text, its directory (for resolving relative
+    paths in the modified copy), and the override/constraint entries
+    grouped by section in declaration order.
+    """
+
+    text: str
+    base_dir: Path
+    sections: tuple[tuple[str, tuple[str, ...]], ...]
+
+
+def load_targets(pyproject_path: Path | str) -> AuditTargets:
+    """Read a pyproject.toml and collect the override/constraint targets.
+
+    Cheap: parses TOML but does not invoke `uv lock`. Use this when you
+    need to know up front how many entries an audit will process.
+    """
+    path = Path(pyproject_path).resolve()
+    text = path.read_text()
+    doc = tomlkit.parse(text)
+    base_dir = path.parent
+
+    sections: list[tuple[str, tuple[str, ...]]] = []
+    for section in FIELDS:
+        try:
+            arr = get_uv_array(doc, section)
+        except (KeyError, TypeError):
+            continue
+        sections.append((section, tuple(str(e) for e in arr)))
+
+    return AuditTargets(text=text, base_dir=base_dir, sections=tuple(sections))
+
+
+def evaluate_entry(
+    targets: AuditTargets,
     section_key: str,
     entry: str,
-    original_dir: Path,
 ) -> Result:
+    """Evaluate one override/constraint entry against `uv lock`.
+
+    Returns a Result with one of the four statuses (prune/keep/skip/error).
+    Each call spawns its own tempdir and `uv lock` invocation, so callers
+    can interleave evaluation with progress output.
+    """
     try:
         req = Requirement(entry)
     except Exception:  # noqa: BLE001
@@ -88,10 +129,10 @@ def _evaluate_entry(
         return Result(status="skip", value="-")
 
     modified_text = prepare_modified_text(
-        original_text,
+        targets.text,
         section_key,
         entry,
-        original_dir,
+        targets.base_dir,
     )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -108,28 +149,18 @@ def _evaluate_entry(
 def audit(pyproject_path: Path | str) -> AuditReport:
     """Audit a pyproject.toml for redundant override/constraint entries.
 
-    Reads the file, iterates over `>=` / `>` entries in
-    `[tool.uv].override-dependencies` and `constraint-dependencies`,
-    and runs `uv lock` once per entry to check whether the natural
-    resolution still satisfies the bound.
+    Iterates over `>=` / `>` entries in `[tool.uv].override-dependencies`
+    and `constraint-dependencies`, running `uv lock` once per entry to
+    check whether the natural resolution still satisfies the bound.
     """
-    path = Path(pyproject_path).resolve()
-    text = path.read_text()
-    doc = tomlkit.parse(text)
-    base_dir = path.parent
-
+    targets = load_targets(pyproject_path)
     entries: list[EntryResult] = []
-    for section in FIELDS:
-        try:
-            arr = get_uv_array(doc, section)
-        except (KeyError, TypeError):
-            continue
-        for raw in [str(e) for e in arr]:
-            result = _evaluate_entry(text, section, raw, base_dir)
+    for section, items in targets.sections:
+        for raw in items:
+            result = evaluate_entry(targets, section, raw)
             entries.append(
                 EntryResult(section=section, entry=raw, result=result),
             )
-
     return AuditReport(entries=tuple(entries))
 
 
