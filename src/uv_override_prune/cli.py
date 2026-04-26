@@ -1,15 +1,17 @@
 """CLI entry point for uv-override-prune.
 
-A thin wrapper around `core.audit` and `core.apply_fix` that handles
-argument parsing, output formatting, and exit codes.
+A thin wrapper around `core.load_targets`, `core.evaluate_entry`, and
+`core.apply_fix` that handles argument parsing, streaming output, and
+exit codes.
 """
 
 import argparse
+import io
 import sys
 from pathlib import Path
 
 from . import __version__
-from .core import AuditReport, EntryResult, apply_fix, audit
+from .core import AuditReport, EntryResult, apply_fix, evaluate_entry, load_targets
 
 _LABELS = {
     "prune": "[PRUNE]",
@@ -19,25 +21,15 @@ _LABELS = {
 }
 
 
-def format_per_entry(report: AuditReport) -> str:
-    """Render the per-entry section of the report as a string. Pure."""
-    by_section: dict[str, list[EntryResult]] = {}
-    for e in report.entries:
-        by_section.setdefault(e.section, []).append(e)
-    lines: list[str] = []
-    for section, items in by_section.items():
-        n = len(items)
-        word = "entry" if n == 1 else "entries"
-        lines.append(f"=== {section} ({n} {word}) ===")
-        entry_w = max(len(e.entry) for e in items)
-        for e in items:
-            label = _LABELS[e.status]
-            lines.append(f"{label} {e.entry:<{entry_w}}  {e.result.value}")
-        lines.append("")
-    return "\n".join(lines)
-
-
 def main() -> int:
+    # Equivalent to running under PYTHONUNBUFFERED=1: each evaluation
+    # takes seconds, so per-entry progress must reach the terminal as
+    # soon as it is printed even when stdout is piped.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(write_through=True)
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(write_through=True)
+
     parser = argparse.ArgumentParser(
         description=(
             "Detect prunable override-dependencies / "
@@ -75,9 +67,24 @@ def main() -> int:
         print(f"File not found: {display_path}", file=sys.stderr)
         return 2
 
-    report = audit(pyproject_path)
-    print(format_per_entry(report))
+    targets = load_targets(pyproject_path)
+    all_entries: list[EntryResult] = []
+    for section, items in targets.sections:
+        n = len(items)
+        word = "entry" if n == 1 else "entries"
+        print(f"=== {section} ({n} {word}) ===")
+        if not items:
+            print()
+            continue
+        entry_w = max(len(e) for e in items)
+        for raw in items:
+            result = evaluate_entry(targets, section, raw)
+            er = EntryResult(section=section, entry=raw, result=result)
+            all_entries.append(er)
+            print(f"{_LABELS[er.status]} {raw:<{entry_w}}  {result.value}")
+        print()
 
+    report = AuditReport(entries=tuple(all_entries))
     prunable = report.prunable()
     if not prunable:
         print("No prunable entries found.")
