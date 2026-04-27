@@ -52,13 +52,22 @@ Exit codes:
 
 ## Why
 
-uv lets you pin a transitive dependency version via `[tool.uv] override-dependencies` and `constraint-dependencies`. A common reason to reach for these is CVE mitigation: a vulnerability is disclosed in a transitive package, and you force the patched minimum version while waiting for direct deps to require it naturally. Once they catch up, the entry is no longer doing anything — but it's easy to forget which ones are still load-bearing, and stale overrides become a judgment cost at every audit or upgrade ("is this still needed, or just history?"). `uv-override-prune` answers that mechanically by checking whether each entry's lower bound is already satisfied by natural resolution.
+uv lets you pin a transitive dependency version via `[tool.uv] override-dependencies` and `constraint-dependencies`.
+
+A common reason to reach for these is CVE mitigation: a vulnerability is disclosed in a transitive package, and you force the patched minimum version while direct deps catch up.
+
+Once they do, the entry is no longer doing anything — but it's easy to forget which ones are still load-bearing. Stale overrides become a judgment cost at every audit or upgrade ("is this still needed, or just history?").
+
+`uv-override-prune` answers that mechanically: it checks whether each entry's lower bound is already satisfied by what `uv lock` would resolve without the override.
+
+## How it works
+
+For each candidate entry, the tool removes it in a temp copy of `pyproject.toml`, runs `uv lock` there, and checks whether the resulting natural resolution still satisfies the entry's specifier. If yes, the entry is `[PRUNE]`.
 
 ## Scope
 
-- Targets entries in `[tool.uv]` `override-dependencies` and `constraint-dependencies`.
-- Only entries whose specifier uses `>=` and/or `>` are checked. Entries using `==`, `~=`, `<`, `<=`, `!=` (alone or mixed) are skipped.
-- One-at-a-time detection: removes each entry in a temp copy of `pyproject.toml`, runs `uv lock`, and checks whether the natural resolution still satisfies the entry's specifier.
+- Targets entries in `[tool.uv] override-dependencies` and `constraint-dependencies`.
+- Only specifiers using `>=` and/or `>` are checked. Entries using `==`, `~=`, `<`, `<=`, `!=` (alone or mixed) are skipped.
 
 ## Known limitations
 
