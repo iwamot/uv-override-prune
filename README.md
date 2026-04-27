@@ -37,7 +37,7 @@ Example output:
 === override-dependencies (3 entries) ===
 [KEEP]  aiohttp>=3.13.5    3.13.3
 [PRUNE] httpx>=0.1.0       0.28.1
-[SKIP]  foo==1.0           -
+[SKIP]  foo==1.0           (non-lower-bound)
 
 Run with --fix to prune entries marked [PRUNE].
 ```
