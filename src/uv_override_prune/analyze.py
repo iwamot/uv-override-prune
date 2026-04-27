@@ -18,7 +18,7 @@ class Result:
     """The classification verdict for a single override/constraint entry."""
 
     status: str  # "prune" | "keep" | "skip" | "error"
-    value: str  # short value: resolved version, "(unused)", "-", or error tag
+    value: str  # resolved version, "(unused)", "(non-lower-bound)", or error tag
 
 
 def is_pure_lower_bound(req: Requirement) -> bool:

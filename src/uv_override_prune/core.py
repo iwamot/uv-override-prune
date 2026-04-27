@@ -126,7 +126,7 @@ def evaluate_entry(
         return Result(status="error", value="parse error")
 
     if not is_pure_lower_bound(req):
-        return Result(status="skip", value="-")
+        return Result(status="skip", value="(non-lower-bound)")
 
     modified_text = prepare_modified_text(
         targets.text,

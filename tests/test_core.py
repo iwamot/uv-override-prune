@@ -1,5 +1,12 @@
+from pathlib import Path
+
 from uv_override_prune.analyze import Result
-from uv_override_prune.core import AuditReport, EntryResult
+from uv_override_prune.core import (
+    AuditReport,
+    AuditTargets,
+    EntryResult,
+    evaluate_entry,
+)
 
 
 def _entry(section: str, entry: str, status: str) -> EntryResult:
@@ -69,3 +76,17 @@ def test_audit_report_by_section_omits_sections_with_no_prunable():
 def test_audit_report_by_section_empty_when_no_prunable():
     report = AuditReport(entries=())
     assert report.by_section() == {}
+
+
+def test_evaluate_entry_skips_non_lower_bound_with_descriptive_value():
+    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    result = evaluate_entry(targets, "override-dependencies", "foo==1.0")
+    assert result.status == "skip"
+    assert result.value == "(non-lower-bound)"
+
+
+def test_evaluate_entry_returns_parse_error_for_invalid_entry():
+    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    result = evaluate_entry(targets, "override-dependencies", "not a valid req")
+    assert result.status == "error"
+    assert result.value == "parse error"
