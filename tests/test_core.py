@@ -85,6 +85,17 @@ def test_evaluate_entry_skips_non_lower_bound_with_descriptive_value():
     assert result.value == "(non-lower-bound)"
 
 
+def test_evaluate_entry_skips_marker_entry_with_descriptive_value():
+    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    result = evaluate_entry(
+        targets,
+        "override-dependencies",
+        'foo>=1.0; python_version >= "3.10"',
+    )
+    assert result.status == "skip"
+    assert result.value == "(has-marker)"
+
+
 def test_evaluate_entry_returns_parse_error_for_invalid_entry():
     targets = AuditTargets(text="", base_dir=Path(), sections=())
     result = evaluate_entry(targets, "override-dependencies", "not a valid req")

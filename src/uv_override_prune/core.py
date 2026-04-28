@@ -128,6 +128,9 @@ def evaluate_entry(
     if not is_pure_lower_bound(req):
         return Result(status="skip", value="(non-lower-bound)")
 
+    if req.marker is not None:
+        return Result(status="skip", value="(has-marker)")
+
     modified_text = prepare_modified_text(
         targets.text,
         section_key,

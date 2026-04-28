@@ -68,6 +68,7 @@ For each candidate entry, the tool removes it in a temp copy of `pyproject.toml`
 
 - Targets entries in `[tool.uv] override-dependencies` and `constraint-dependencies`.
 - Only specifiers using `>=` and/or `>` are checked. Entries using `==`, `~=`, `<`, `<=`, `!=` (alone or mixed) are skipped.
+- Entries with an environment marker (e.g. `foo>=1.0; python_version >= "3.10"`) are skipped, since the natural `uv lock` resolution doesn't reflect the marker's intent.
 
 ## Known limitations
 
