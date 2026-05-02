@@ -35,6 +35,8 @@ dev = [
     "pip-licenses==5.5.5",
     "pytest==9.0.3",
     "pytest-cov==7.1.0",
+    "ruff==0.15.12",
+    "ty==0.0.34",
 ]
 
 [build-system]
@@ -62,6 +64,7 @@ exclude = [
 
 [tool.uv]
 exclude-newer = "1 day"
+exclude-newer-package = { ruff = "0 days", ty = "0 days" }
 
 [tool.ruff]
 include = ["*.py", "src/**/*.py", "tests/**/*.py"]
