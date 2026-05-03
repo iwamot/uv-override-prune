@@ -9,16 +9,20 @@ on:
   push:
     tags: ['v*.*.*']
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   publish-pypi:
+    name: publish-pypi
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
     permissions:
       contents: read
-      id-token: write
+      id-token: write  # for PyPI Trusted Publishing OIDC
     steps:
       - uses: iwamot/actions/uv-publish@792bb6f7b66b5d046aa285d39303a0aa7b10f822 # v0.5.0
