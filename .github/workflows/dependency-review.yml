@@ -10,4 +10,4 @@ jobs:
     permissions:
       contents: read
       pull-requests: write  # to comment review summary
-    uses: iwamot/workflows/.github/workflows/dependency-review.yml@69e4e95359ec485551da77d06323ecc3d9c956a9 # v2.0.0
+    uses: iwamot/workflows/.github/workflows/dependency-review.yml@8a5a298fe570b32a00513bdbacddadb8fd1c0cfc # v3.0.0
