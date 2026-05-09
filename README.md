@@ -1,10 +1,7 @@
 # uv-override-prune
 
-[![CI](https://github.com/iwamot/uv-override-prune/actions/workflows/validate.yml/badge.svg)](https://github.com/iwamot/uv-override-prune/actions/workflows/validate.yml)
-[![codecov](https://codecov.io/gh/iwamot/uv-override-prune/graph/badge.svg)](https://codecov.io/gh/iwamot/uv-override-prune)
-[![PyPI](https://img.shields.io/pypi/v/uv-override-prune.svg)](https://pypi.org/project/uv-override-prune/)
-[![Python](https://img.shields.io/pypi/pyversions/uv-override-prune.svg)](https://pypi.org/project/uv-override-prune/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![pypi](https://img.shields.io/pypi/v/uv-override-prune.svg)](https://pypi.org/project/uv-override-prune/)
+[![python](https://img.shields.io/pypi/pyversions/uv-override-prune.svg)](https://pypi.org/project/uv-override-prune/)
 
 Detect prunable `override-dependencies` / `constraint-dependencies` entries in uv projects.
 
