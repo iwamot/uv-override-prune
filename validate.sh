@@ -19,6 +19,11 @@ if [[ -n "$CI" ]]; then
 else
   uv run pytest --cov --cov-report=term
 fi
+trap 'rm -rf dist' EXIT
+rm -rf dist
+uv build
+# --token is a placeholder to skip the interactive prompt; --dry-run never uploads.
+uv publish --dry-run --trusted-publishing never --token dry-run
 
 # Shared lint tasks
 mise run gha-lint
