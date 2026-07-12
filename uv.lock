@@ -280,7 +280,7 @@ dependencies = [
     { name = "tomlkit" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "pip-licenses" },
     { name = "pytest" },
@@ -290,12 +290,15 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "packaging" },
-    { name = "pip-licenses", marker = "extra == 'dev'", specifier = "==5.5.5" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = "==9.1.1" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = "==7.1.0" },
     { name = "tomlkit" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pip-licenses", specifier = "==5.5.5" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+]
 
 [[package]]
 name = "wcwidth"
