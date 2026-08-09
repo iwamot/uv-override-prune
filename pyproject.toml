@@ -18,9 +18,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development",
 ]
+# Pinned rather than ranged: this ships as a CLI that `uv tool install` and
+# `uvx` place in an environment of its own, so no other project's resolver
+# composes with these versions and a range states nothing to anyone. Exact pins
+# also put them on the Dependency Dashboard, making each upstream release a
+# Renovate PR that CI judges.
 dependencies = [
-    "packaging",
-    "tomlkit",
+    "packaging==26.1",
+    "tomlkit==0.14.0",
 ]
 
 [project.scripts]
