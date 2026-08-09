@@ -25,7 +25,7 @@ classifiers = [
 # Renovate PR that CI judges.
 dependencies = [
     "packaging==26.3",
-    "tomlkit==0.14.0",
+    "tomlkit==0.15.1",
 ]
 
 [project.scripts]
