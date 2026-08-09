@@ -24,7 +24,7 @@ classifiers = [
 # also put them on the Dependency Dashboard, making each upstream release a
 # Renovate PR that CI judges.
 dependencies = [
-    "packaging==26.1",
+    "packaging==26.3",
     "tomlkit==0.14.0",
 ]
 
