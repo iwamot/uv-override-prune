@@ -200,3 +200,39 @@ def test_prepare_modified_text_rewrites_readme_path():
         Path("/projects/foo"),
     )
     assert 'readme = "/projects/foo/README.md"' in result
+
+
+def test_prepare_modified_text_removes_every_equivalent_copy():
+    original = (
+        "[tool.uv]\n"
+        'override-dependencies = ["click>=8.0", "foo>=1.0", "Click >= 8.0.0"]\n'
+    )
+    result = prepare_modified_text(
+        original,
+        "override-dependencies",
+        "click>=8.0",
+        Path("/projects/foo"),
+    )
+    assert 'override-dependencies = ["foo>=1.0"]' in result
+
+
+def test_prepare_modified_text_keeps_same_name_with_other_specifier():
+    original = '[tool.uv]\noverride-dependencies = ["click>=8.0", "click>=8.1"]\n'
+    result = prepare_modified_text(
+        original,
+        "override-dependencies",
+        "click>=8.0",
+        Path("/projects/foo"),
+    )
+    assert 'override-dependencies = ["click>=8.1"]' in result
+
+
+def test_prepare_modified_text_leaves_unparsable_siblings_alone():
+    original = '[tool.uv]\noverride-dependencies = ["click>=8.0", "not a valid req"]\n'
+    result = prepare_modified_text(
+        original,
+        "override-dependencies",
+        "click>=8.0",
+        Path("/projects/foo"),
+    )
+    assert 'override-dependencies = ["not a valid req"]' in result

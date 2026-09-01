@@ -4,11 +4,11 @@ These functions operate on in-memory data structures (Requirement, Version,
 parsed TOML documents) and have no dependency on file I/O or subprocesses.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
 
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
@@ -25,6 +25,40 @@ def is_pure_lower_bound(req: Requirement) -> bool:
     """True if the specifier uses only '>=' and/or '>' operators."""
     ops = {spec.operator for spec in req.specifier}
     return bool(ops) and ops <= {">=", ">"}
+
+
+def is_same_requirement(raw: str, req: Requirement) -> bool:
+    """True if `raw` parses to a Requirement equal to `req`.
+
+    packaging's equality normalises the name and canonicalises versions,
+    so `Click >= 8.0.0` matches `click>=8.0`. Unparsable text matches
+    nothing.
+    """
+    try:
+        return Requirement(raw) == req
+    except InvalidRequirement:
+        return False
+
+
+def duplicate_indexes(entries: Sequence[str]) -> frozenset[int]:
+    """Indexes of entries that restate an earlier entry in the same list.
+
+    A later copy is always prunable: the first occurrence carries the
+    bound, and its own verdict is computed with every copy removed, so
+    the copies never shadow each other. Unparsable entries never match
+    anything.
+    """
+    seen: set[Requirement] = set()
+    out: set[int] = set()
+    for i, raw in enumerate(entries):
+        try:
+            req = Requirement(raw)
+        except InvalidRequirement:
+            continue
+        if req in seen:
+            out.add(i)
+        seen.add(req)
+    return frozenset(out)
 
 
 def classify(req: Requirement, resolved: Version | None) -> Result:

@@ -7,6 +7,7 @@ and the `uv lock` subprocess for the CLI.
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from packaging.requirements import Requirement
 from .analyze import (
     Result,
     classify,
+    duplicate_indexes,
     find_resolved_version,
     is_pure_lower_bound,
 )
@@ -149,6 +151,25 @@ def evaluate_entry(
     return classify(req, resolved)
 
 
+def evaluate_section(
+    targets: AuditTargets,
+    section_key: str,
+    items: Sequence[str],
+) -> Iterator[Result]:
+    """Evaluate the entries of one section, yielding a Result per entry.
+
+    Entries that restate an earlier entry in the same section are
+    prunable as "(duplicate)" without running `uv lock`; see
+    `duplicate_indexes`.
+    """
+    duplicates = duplicate_indexes(items)
+    for i, raw in enumerate(items):
+        if i in duplicates:
+            yield Result(status="prune", value="(duplicate)")
+        else:
+            yield evaluate_entry(targets, section_key, raw)
+
+
 def audit(pyproject_path: Path | str) -> AuditReport:
     """Audit a pyproject.toml for redundant override/constraint entries.
 
@@ -159,8 +180,8 @@ def audit(pyproject_path: Path | str) -> AuditReport:
     targets = load_targets(pyproject_path)
     entries: list[EntryResult] = []
     for section, items in targets.sections:
-        for raw in items:
-            result = evaluate_entry(targets, section, raw)
+        results = evaluate_section(targets, section, items)
+        for raw, result in zip(items, results, strict=True):
             entries.append(
                 EntryResult(section=section, entry=raw, result=result),
             )

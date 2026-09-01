@@ -1,6 +1,6 @@
 """CLI entry point for uv-override-prune.
 
-A thin wrapper around `core.load_targets`, `core.evaluate_entry`, and
+A thin wrapper around `core.load_targets`, `core.evaluate_section`, and
 `core.apply_fix` that handles argument parsing, streaming output, and
 exit codes.
 """
@@ -11,7 +11,13 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .core import AuditReport, EntryResult, apply_fix, evaluate_entry, load_targets
+from .core import (
+    AuditReport,
+    EntryResult,
+    apply_fix,
+    evaluate_section,
+    load_targets,
+)
 
 _LABELS = {
     "prune": "[PRUNE]",
@@ -77,8 +83,8 @@ def main() -> int:
             print()
             continue
         entry_w = max(len(e) for e in items)
-        for raw in items:
-            result = evaluate_entry(targets, section, raw)
+        results = evaluate_section(targets, section, items)
+        for raw, result in zip(items, results, strict=True):
             er = EntryResult(section=section, entry=raw, result=result)
             all_entries.append(er)
             print(f"{_LABELS[er.status]} {raw:<{entry_w}}  {result.value}")

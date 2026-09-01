@@ -3,8 +3,10 @@ from packaging.version import Version
 
 from uv_override_prune.analyze import (
     classify,
+    duplicate_indexes,
     find_resolved_version,
     is_pure_lower_bound,
+    is_same_requirement,
 )
 
 
@@ -105,3 +107,39 @@ def test_find_resolved_version_skips_non_mapping_package_entries():
 def test_find_resolved_version_returns_none_when_package_field_not_list():
     lock_doc = {"package": "wrong-shape"}
     assert find_resolved_version(lock_doc, "foo") is None
+
+
+def test_duplicate_indexes_empty_when_all_distinct():
+    assert duplicate_indexes(["foo>=1.0", "bar>=1.0", "foo>=2.0"]) == frozenset()
+
+
+def test_duplicate_indexes_flags_later_copies_only():
+    entries = ["foo>=1.0", "bar>=1.0", "foo>=1.0", "foo>=1.0"]
+    assert duplicate_indexes(entries) == frozenset({2, 3})
+
+
+def test_duplicate_indexes_matches_equivalent_spellings():
+    entries = ["click>=8.0", "Click >= 8.0.0"]
+    assert duplicate_indexes(entries) == frozenset({1})
+
+
+def test_duplicate_indexes_distinguishes_markers():
+    entries = ["foo>=1.0", 'foo>=1.0; python_version >= "3.10"']
+    assert duplicate_indexes(entries) == frozenset()
+
+
+def test_duplicate_indexes_ignores_unparsable_entries():
+    entries = ["not a valid req", "not a valid req", "foo>=1.0"]
+    assert duplicate_indexes(entries) == frozenset()
+
+
+def test_is_same_requirement_matches_equivalent_spelling():
+    assert is_same_requirement("Click >= 8.0.0", Requirement("click>=8.0"))
+
+
+def test_is_same_requirement_rejects_different_specifier():
+    assert not is_same_requirement("click>=8.1", Requirement("click>=8.0"))
+
+
+def test_is_same_requirement_rejects_unparsable_text():
+    assert not is_same_requirement("not a valid req", Requirement("click>=8.0"))
