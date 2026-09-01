@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import cast
 
 import tomlkit
+from packaging.requirements import Requirement
 from tomlkit import TOMLDocument
 from tomlkit.items import Array, Table
+
+from .analyze import is_same_requirement
 
 
 def get_uv_array(doc: TOMLDocument, section_key: str) -> Array:
@@ -109,9 +112,18 @@ def prepare_modified_text(
 ) -> str:
     """Produce pyproject.toml text with `entry` removed and paths absolutised.
 
+    Every element equal to `entry` as a Requirement is removed, not just
+    the first: a duplicated entry must leave no copy behind, or the
+    remaining copy would keep the bound in force and the natural
+    resolution would look as if the entry were redundant.
+
     Pure transformation: parse, mutate in memory, serialise back.
     """
     doc = tomlkit.parse(original_text)
-    get_uv_array(doc, section_key).remove(entry)
+    arr = get_uv_array(doc, section_key)
+    req = Requirement(entry)
+    for item in list(arr):
+        if is_same_requirement(str(item), req):
+            arr.remove(item)
     rewrite_paths(doc, original_dir)
     return tomlkit.dumps(doc)

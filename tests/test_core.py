@@ -6,6 +6,7 @@ from uv_override_prune.core import (
     AuditTargets,
     EntryResult,
     evaluate_entry,
+    evaluate_section,
 )
 
 
@@ -101,3 +102,15 @@ def test_evaluate_entry_returns_parse_error_for_invalid_entry():
     result = evaluate_entry(targets, "override-dependencies", "not a valid req")
     assert result.status == "error"
     assert result.value == "parse error"
+
+
+def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
+    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    items = ["foo==1.0", "foo==1.0", "bar==1.0"]
+    results = list(evaluate_section(targets, "override-dependencies", items))
+    assert [r.status for r in results] == ["skip", "prune", "skip"]
+    assert [r.value for r in results] == [
+        "(non-lower-bound)",
+        "(duplicate)",
+        "(non-lower-bound)",
+    ]
