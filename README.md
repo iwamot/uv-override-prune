@@ -45,7 +45,7 @@ Exit codes:
 |------|---------|
 | `0`  | No prunable entries (or `--fix` succeeded) |
 | `1`  | Prunable entries found (without `--fix`) |
-| `2`  | `pyproject.toml` not found or malformed |
+| `2`  | `pyproject.toml` not found or malformed, or an entry marked `[ERROR]` (the audit is incomplete, even when other entries were pruned) |
 
 ## Why
 
