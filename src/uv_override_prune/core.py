@@ -53,6 +53,23 @@ class AuditReport:
         """Entries that are safe to remove (status == 'prune')."""
         return [e for e in self.entries if e.status == "prune"]
 
+    def errors(self) -> list[EntryResult]:
+        """Entries that could not be evaluated (status == 'error')."""
+        return [e for e in self.entries if e.status == "error"]
+
+    def exit_code(self, *, fixed: bool) -> int:
+        """Process exit code for this report.
+
+        An entry that could not be evaluated means the audit is incomplete,
+        which outranks everything else: a clean-looking run that skipped its
+        checks must not pass CI.
+        """
+        if self.errors():
+            return 2
+        if self.prunable() and not fixed:
+            return 1
+        return 0
+
     def by_section(self) -> dict[str, list[str]]:
         """Prunable entries grouped by field name (input shape for apply_fix)."""
         out: dict[str, list[str]] = {}

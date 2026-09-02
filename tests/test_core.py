@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from uv_override_prune.analyze import Result
 from uv_override_prune.core import (
     AuditReport,
@@ -114,3 +116,36 @@ def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
         "(duplicate)",
         "(non-lower-bound)",
     ]
+
+
+def test_audit_report_errors():
+    report = AuditReport(
+        entries=(
+            _entry("override-dependencies", "foo>=1.0", "prune"),
+            _entry("override-dependencies", "bar>=2.0", "error"),
+            _entry("constraint-dependencies", "baz>=3.0", "error"),
+        )
+    )
+    assert [e.entry for e in report.errors()] == ["bar>=2.0", "baz>=3.0"]
+
+
+@pytest.mark.parametrize(
+    "statuses, fixed, expected",
+    [
+        ([], False, 0),
+        (["keep", "skip"], False, 0),
+        (["prune"], False, 1),
+        (["prune"], True, 0),
+        (["error"], False, 2),
+        (["prune", "error"], False, 2),
+        (["prune", "error"], True, 2),
+    ],
+)
+def test_audit_report_exit_code(statuses, fixed, expected):
+    report = AuditReport(
+        entries=tuple(
+            _entry("override-dependencies", f"pkg{i}>=1.0", s)
+            for i, s in enumerate(statuses)
+        )
+    )
+    assert report.exit_code(fixed=fixed) == expected

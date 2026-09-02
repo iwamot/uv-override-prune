@@ -98,19 +98,22 @@ def main() -> int:
 
     report = AuditReport(entries=tuple(all_entries))
     prunable = report.prunable()
+    fixed = args.fix and bool(prunable)
     if not prunable:
         print("No prunable entries found.")
-        return 0
-
-    if args.fix:
+    elif fixed:
         apply_fix(pyproject_path, report.by_section())
         n = len(prunable)
         word = "entry" if n == 1 else "entries"
         print(f"Pruned {n} {word} from {display_path}.")
-        return 0
-
-    print("Run with --fix to prune entries marked [PRUNE].")
-    return 1
+    else:
+        print("Run with --fix to prune entries marked [PRUNE].")
+    errors = report.errors()
+    if errors:
+        n = len(errors)
+        word = "entry" if n == 1 else "entries"
+        print(f"{n} {word} could not be evaluated.")
+    return report.exit_code(fixed=fixed)
 
 
 if __name__ == "__main__":
