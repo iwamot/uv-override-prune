@@ -10,6 +10,8 @@ import io
 import sys
 from pathlib import Path
 
+from tomlkit.exceptions import ParseError
+
 from . import __version__
 from .core import (
     AuditReport,
@@ -73,7 +75,11 @@ def main() -> int:
         print(f"File not found: {display_path}", file=sys.stderr)
         return 2
 
-    targets = load_targets(pyproject_path)
+    try:
+        targets = load_targets(pyproject_path)
+    except ParseError as e:
+        print(f"error: malformed pyproject.toml: {e}", file=sys.stderr)
+        return 2
     all_entries: list[EntryResult] = []
     for section, items in targets.sections:
         n = len(items)
