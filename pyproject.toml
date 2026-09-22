@@ -8,7 +8,7 @@ license = "MIT"
 authors = [{ name = "Takashi Iwamoto" }]
 keywords = ["uv", "override", "dependencies", "audit", "prune"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
