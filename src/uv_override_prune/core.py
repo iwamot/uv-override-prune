@@ -79,6 +79,8 @@ class AuditReport:
 
 
 def _run_uv_lock(project_dir: Path) -> bool:
+    # The CLI refuses to start without uv; this check covers callers that
+    # reach `audit()` directly.
     uv_bin = shutil.which("uv")
     if uv_bin is None:
         return False

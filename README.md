@@ -7,6 +7,8 @@ Detect prunable `override-dependencies` / `constraint-dependencies` entries in u
 
 ## Install
 
+Requires `uv` on `PATH`, since the audit runs `uv lock`.
+
 ```bash
 uv tool install uv-override-prune
 ```
