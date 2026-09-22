@@ -55,11 +55,13 @@ A common reason to reach for these is CVE mitigation: a vulnerability is disclos
 
 Once they do, the entry is no longer doing anything — but it's easy to forget which ones are still load-bearing. Stale overrides become a judgment cost at every audit or upgrade ("is this still needed, or just history?").
 
-`uv-override-prune` answers that mechanically: it checks whether each entry's lower bound is already satisfied by what `uv lock` would resolve without the override.
+`uv-override-prune` answers that mechanically: it checks whether each entry's lower bound is already satisfied by what `uv lock` would resolve without the override, starting from the versions in your current `uv.lock`.
 
 ## How it works
 
-For each candidate entry, the tool removes it in a temp copy of `pyproject.toml`, runs `uv lock` there, and checks whether the resulting natural resolution still satisfies the entry's specifier. If yes, the entry is `[PRUNE]`.
+For each candidate entry, the tool removes it in a temp copy of `pyproject.toml` and `uv.lock`, runs `uv lock` there, and checks whether the resulting natural resolution still satisfies the entry's specifier. If yes, the entry is `[PRUNE]`.
+
+Starting from the existing `uv.lock` matters because `uv lock` keeps already-locked versions wherever it can. A from-scratch resolution would upgrade every package first, which can make an entry look redundant even though removing it in the real project would downgrade the package. To evaluate against the newest versions instead, run `uv lock --upgrade` before the tool. Without a `uv.lock`, the tool falls back to a from-scratch resolution and says so on stderr.
 
 ## Scope
 

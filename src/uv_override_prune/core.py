@@ -97,12 +97,14 @@ class AuditTargets:
     """The parsed pyproject.toml input for an audit run.
 
     Holds the original TOML text, its directory (for resolving relative
-    paths in the modified copy), and the override/constraint entries
+    paths in the modified copy), the project's `uv.lock` text (None when
+    the project has no lockfile), and the override/constraint entries
     grouped by section in declaration order.
     """
 
     text: str
     base_dir: Path
+    lock_text: str | None
     sections: tuple[tuple[str, tuple[str, ...]], ...]
 
 
@@ -116,6 +118,8 @@ def load_targets(pyproject_path: Path | str) -> AuditTargets:
     text = path.read_text()
     doc = tomlkit.parse(text)
     base_dir = path.parent
+    lock_path = base_dir / "uv.lock"
+    lock_text = lock_path.read_text() if lock_path.is_file() else None
 
     sections: list[tuple[str, tuple[str, ...]]] = []
     for section in FIELDS:
@@ -125,7 +129,12 @@ def load_targets(pyproject_path: Path | str) -> AuditTargets:
             continue
         sections.append((section, tuple(str(e) for e in arr)))
 
-    return AuditTargets(text=text, base_dir=base_dir, sections=tuple(sections))
+    return AuditTargets(
+        text=text,
+        base_dir=base_dir,
+        lock_text=lock_text,
+        sections=tuple(sections),
+    )
 
 
 def evaluate_entry(
@@ -138,6 +147,11 @@ def evaluate_entry(
     Returns a Result with one of the four statuses (prune/keep/skip/error).
     Each call spawns its own tempdir and `uv lock` invocation, so callers
     can interleave evaluation with progress output.
+
+    The project's `uv.lock` is copied into the tempdir when it exists:
+    `uv lock` keeps the versions already locked wherever it can, so the
+    verdict matches what `uv lock` does after `--fix` in the real project
+    rather than a from-scratch resolution that upgrades everything.
     """
     try:
         req = Requirement(entry)
@@ -160,6 +174,8 @@ def evaluate_entry(
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         (tmp_path / "pyproject.toml").write_text(modified_text)
+        if targets.lock_text is not None:
+            (tmp_path / "uv.lock").write_text(targets.lock_text)
         if not _run_uv_lock(tmp_path):
             return Result(status="error", value="lock failed")
         lock_doc = tomlkit.parse((tmp_path / "uv.lock").read_text())
