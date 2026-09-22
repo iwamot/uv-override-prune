@@ -7,6 +7,7 @@ exit codes.
 
 import argparse
 import io
+import shutil
 import sys
 from pathlib import Path
 
@@ -80,7 +81,11 @@ def main() -> int:
     except ParseError as e:
         print(f"error: malformed pyproject.toml: {e}", file=sys.stderr)
         return 2
-    if targets.lock_text is None and any(items for _, items in targets.sections):
+    has_entries = any(items for _, items in targets.sections)
+    if has_entries and shutil.which("uv") is None:
+        print("error: uv not found on PATH", file=sys.stderr)
+        return 2
+    if has_entries and targets.lock_text is None:
         print(
             "note: uv.lock not found; evaluating against a fresh resolution",
             file=sys.stderr,
