@@ -1,15 +1,33 @@
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 from uv_override_prune.analyze import Result
 from uv_override_prune.core import (
     AuditReport,
     AuditTargets,
     EntryResult,
+    audit,
     evaluate_entry,
     evaluate_section,
+    load_targets,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+# The fixture uv.lock was produced with `httpx==0.23.0`; the range here is
+# what a project looks like once its pin has been relaxed but not relocked.
+LOCK_AWARE_PYPROJECT = """\
+[project]
+name = "exp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["httpx>=0.23"]
+
+[tool.uv]
+override-dependencies = ["httpcore>=1.0"]
+"""
 
 
 def _entry(section: str, entry: str, status: str) -> EntryResult:
@@ -82,14 +100,14 @@ def test_audit_report_by_section_empty_when_no_prunable():
 
 
 def test_evaluate_entry_skips_non_lower_bound_with_descriptive_value():
-    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
     result = evaluate_entry(targets, "override-dependencies", "foo==1.0")
     assert result.status == "skip"
     assert result.value == "(non-lower-bound)"
 
 
 def test_evaluate_entry_skips_marker_entry_with_descriptive_value():
-    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
     result = evaluate_entry(
         targets,
         "override-dependencies",
@@ -100,14 +118,14 @@ def test_evaluate_entry_skips_marker_entry_with_descriptive_value():
 
 
 def test_evaluate_entry_returns_parse_error_for_invalid_entry():
-    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
     result = evaluate_entry(targets, "override-dependencies", "not a valid req")
     assert result.status == "error"
     assert result.value == "parse error"
 
 
 def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
-    targets = AuditTargets(text="", base_dir=Path(), sections=())
+    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
     items = ["foo==1.0", "foo==1.0", "bar==1.0"]
     results = list(evaluate_section(targets, "override-dependencies", items))
     assert [r.status for r in results] == ["skip", "prune", "skip"]
@@ -149,3 +167,32 @@ def test_audit_report_exit_code(statuses, fixed, expected):
         )
     )
     assert report.exit_code(fixed=fixed) == expected
+
+
+def test_load_targets_reads_lockfile_next_to_pyproject(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(LOCK_AWARE_PYPROJECT)
+    (tmp_path / "uv.lock").write_text("version = 1\n")
+    assert load_targets(tmp_path / "pyproject.toml").lock_text == "version = 1\n"
+
+
+def test_load_targets_has_no_lock_text_without_lockfile(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(LOCK_AWARE_PYPROJECT)
+    assert load_targets(tmp_path / "pyproject.toml").lock_text is None
+
+
+def test_audit_keeps_override_the_locked_versions_still_need(tmp_path):
+    """Runs the real `uv lock` against PyPI.
+
+    httpx 0.23.0 is locked and requires httpcore<0.16, so without the
+    override `uv lock` downgrades httpcore. A from-scratch resolution
+    would upgrade httpx instead and report the override as prunable.
+    """
+    (tmp_path / "pyproject.toml").write_text(LOCK_AWARE_PYPROJECT)
+    lock = (FIXTURES / "lock_aware" / "uv.lock").read_text()
+    (tmp_path / "uv.lock").write_text(lock)
+
+    report = audit(tmp_path / "pyproject.toml")
+
+    assert [e.status for e in report.entries] == ["keep"]
+    assert Version(report.entries[0].result.value) < Version("1.0")
+    assert (tmp_path / "uv.lock").read_text() == lock

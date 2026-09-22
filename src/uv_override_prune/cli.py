@@ -80,6 +80,12 @@ def main() -> int:
     except ParseError as e:
         print(f"error: malformed pyproject.toml: {e}", file=sys.stderr)
         return 2
+    if targets.lock_text is None and any(items for _, items in targets.sections):
+        print(
+            "note: uv.lock not found; evaluating against a fresh resolution",
+            file=sys.stderr,
+        )
+
     all_entries: list[EntryResult] = []
     for section, items in targets.sections:
         n = len(items)
