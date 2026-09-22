@@ -58,6 +58,49 @@ def rewrite_paths(doc: TOMLDocument, original_dir: Path) -> None:
             _absolutize(readme, "file", original_dir)
 
 
+PLACEHOLDER_VERSION = "0.0.0"
+
+# `[project]` fields that take part in resolution. When one of these is
+# dynamic, uv must build the project to learn its value, and the temp
+# copy has no sources to build from. Some backends then build anyway with
+# the field empty (setuptools does when a `file =` source is missing),
+# which would make every entry look unused.
+BUILD_ONLY_FIELDS = ("dependencies", "optional-dependencies", "requires-python")
+
+
+def dynamic_build_fields(doc: TOMLDocument) -> list[str]:
+    """The `[project] dynamic` fields that uv can only read by building.
+
+    Empty when the copy can be locked from static metadata alone.
+    """
+    project = _get_table(doc, "project")
+    if project is None or "dynamic" not in project:
+        return []
+    dynamic = [str(f) for f in cast(Array, project["dynamic"])]
+    return [f for f in BUILD_ONLY_FIELDS if f in dynamic]
+
+
+def pin_dynamic_version(doc: TOMLDocument) -> None:
+    """Replace a dynamic `[project] version` with a static placeholder.
+
+    A dynamic version would make uv build the project like the fields in
+    `BUILD_ONLY_FIELDS`, but unlike them it takes no part in resolving
+    the dependencies, so any value will do.
+
+    Mutates `doc` in place.
+    """
+    project = _get_table(doc, "project")
+    if project is None or "dynamic" not in project:
+        return
+    dynamic = cast(Array, project["dynamic"])
+    if "version" not in dynamic:
+        return
+    dynamic.remove("version")
+    if not dynamic:
+        del project["dynamic"]
+    project["version"] = PLACEHOLDER_VERSION
+
+
 def _get_table(
     parent: MutableMapping[str, object],
     *keys: str,
@@ -110,12 +153,15 @@ def prepare_modified_text(
     entry: str,
     original_dir: Path,
 ) -> str:
-    """Produce pyproject.toml text with `entry` removed and paths absolutised.
+    """Produce pyproject.toml text that `uv lock` can use without `entry`.
 
     Every element equal to `entry` as a Requirement is removed, not just
     the first: a duplicated entry must leave no copy behind, or the
     remaining copy would keep the bound in force and the natural
     resolution would look as if the entry were redundant.
+
+    Relative paths are absolutised and a dynamic version is pinned so
+    that the copy locks in a directory that holds nothing else.
 
     Pure transformation: parse, mutate in memory, serialise back.
     """
@@ -126,4 +172,5 @@ def prepare_modified_text(
         if is_same_requirement(str(item), req):
             arr.remove(item)
     rewrite_paths(doc, original_dir)
+    pin_dynamic_version(doc)
     return tomlkit.dumps(doc)

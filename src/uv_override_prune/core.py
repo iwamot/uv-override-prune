@@ -21,7 +21,12 @@ from .analyze import (
     find_resolved_versions,
     is_pure_lower_bound,
 )
-from .rewrite import get_uv_array, prepare_modified_text, remove_entries
+from .rewrite import (
+    dynamic_build_fields,
+    get_uv_array,
+    prepare_modified_text,
+    remove_entries,
+)
 
 FIELDS = ("override-dependencies", "constraint-dependencies")
 
@@ -165,6 +170,9 @@ def evaluate_entry(
 
     if req.marker is not None:
         return Result(status="skip", value="(has-marker)")
+
+    if dynamic_build_fields(tomlkit.parse(targets.text)):
+        return Result(status="skip", value="(dynamic-metadata)")
 
     modified_text = prepare_modified_text(
         targets.text,

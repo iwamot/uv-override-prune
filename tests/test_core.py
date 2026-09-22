@@ -117,6 +117,18 @@ def test_evaluate_entry_skips_marker_entry_with_descriptive_value():
     assert result.value == "(has-marker)"
 
 
+def test_evaluate_entry_skips_project_with_dynamic_dependencies():
+    targets = AuditTargets(
+        text='[project]\nname = "foo"\ndynamic = ["dependencies"]\n',
+        base_dir=Path(),
+        lock_text=None,
+        sections=(),
+    )
+    result = evaluate_entry(targets, "override-dependencies", "foo>=1.0")
+    assert result.status == "skip"
+    assert result.value == "(dynamic-metadata)"
+
+
 def test_evaluate_entry_returns_parse_error_for_invalid_entry():
     targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
     result = evaluate_entry(targets, "override-dependencies", "not a valid req")
@@ -196,3 +208,34 @@ def test_audit_keeps_override_the_locked_versions_still_need(tmp_path):
     assert [e.status for e in report.entries] == ["keep"]
     assert Version(report.entries[0].result.value) < Version("1.0")
     assert (tmp_path / "uv.lock").read_text() == lock
+
+
+def test_audit_locks_a_project_with_a_dynamic_version(tmp_path):
+    """Runs the real `uv lock` against PyPI.
+
+    hatch-vcs would need the sources and the git history to compute the
+    version, neither of which exists in the temp dir the audit locks in.
+    """
+    (tmp_path / "pyproject.toml").write_text(
+        """\
+[project]
+name = "exp"
+dynamic = ["version"]
+requires-python = ">=3.12"
+dependencies = ["idna>=2"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.uv]
+override-dependencies = ["idna>=3.0"]
+"""
+    )
+
+    report = audit(tmp_path / "pyproject.toml")
+
+    assert [e.status for e in report.entries] == ["prune"]

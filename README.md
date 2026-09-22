@@ -75,7 +75,7 @@ Starting from the existing `uv.lock` matters because `uv lock` keeps already-loc
 
 ## Known limitations
 
-- Projects with a `[build-system]` section may fail to lock in the temp dir if they depend on source files (e.g. `setuptools.packages.find`, Hatch dynamic version from source). `[tool.uv.sources]` path deps, workspace members, and `[project] readme` are rewritten automatically; other build-backend-specific references are not.
+- The temp copy holds only `pyproject.toml` and `uv.lock`, so metadata that needs a build to read is out of reach. A project whose `dependencies`, `optional-dependencies`, or `requires-python` are declared `dynamic` has every entry `[SKIP]`ped as `(dynamic-metadata)`. A dynamic `version` is fine (the copy pins a placeholder), and `[tool.uv.sources]` path deps, workspace members, and `[project] readme` are rewritten to absolute paths.
 - One-at-a-time evaluation: if overrides interact (e.g. cascade redundancy, shared transitive deps), individual runs may miss some prunable entries. Re-run after applying removals to surface the next layer.
 
 ## License
