@@ -3,7 +3,9 @@ from pathlib import Path
 import tomlkit
 
 from uv_override_prune.rewrite import (
+    dynamic_build_fields,
     get_uv_array,
+    pin_dynamic_version,
     prepare_modified_text,
     remove_entries,
     rewrite_paths,
@@ -236,3 +238,68 @@ def test_prepare_modified_text_leaves_unparsable_siblings_alone():
         Path("/projects/foo"),
     )
     assert 'override-dependencies = ["not a valid req"]' in result
+
+
+def test_pin_dynamic_version_replaces_dynamic_version_with_placeholder():
+    doc = tomlkit.parse('[project]\nname = "foo"\ndynamic = ["version"]\n')
+    pin_dynamic_version(doc)
+    assert tomlkit.dumps(doc) == '[project]\nname = "foo"\nversion = "0.0.0"\n'
+
+
+def test_pin_dynamic_version_keeps_other_dynamic_fields():
+    doc = tomlkit.parse(
+        '[project]\nname = "foo"\ndynamic = ["version", "dependencies"]\n',
+    )
+    pin_dynamic_version(doc)
+    assert tomlkit.dumps(doc) == (
+        '[project]\nname = "foo"\ndynamic = ["dependencies"]\nversion = "0.0.0"\n'
+    )
+
+
+def test_pin_dynamic_version_leaves_static_version_alone():
+    original = '[project]\nname = "foo"\nversion = "1.2.3"\n'
+    doc = tomlkit.parse(original)
+    pin_dynamic_version(doc)
+    assert tomlkit.dumps(doc) == original
+
+
+def test_pin_dynamic_version_leaves_dynamic_without_version_alone():
+    original = '[project]\nname = "foo"\ndynamic = ["dependencies"]\n'
+    doc = tomlkit.parse(original)
+    pin_dynamic_version(doc)
+    assert tomlkit.dumps(doc) == original
+
+
+def test_pin_dynamic_version_ignores_missing_project_table():
+    original = "[tool.uv]\noverride-dependencies = []\n"
+    doc = tomlkit.parse(original)
+    pin_dynamic_version(doc)
+    assert tomlkit.dumps(doc) == original
+
+
+def test_prepare_modified_text_pins_dynamic_version():
+    text = (
+        '[project]\nname = "foo"\ndynamic = ["version"]\n\n'
+        '[tool.uv]\noverride-dependencies = ["bar>=1.0"]\n'
+    )
+    result = prepare_modified_text(text, "override-dependencies", "bar>=1.0", Path())
+    assert 'version = "0.0.0"' in result
+    assert "dynamic" not in result
+
+
+def test_dynamic_build_fields_lists_resolution_fields_only():
+    doc = tomlkit.parse(
+        '[project]\nname = "foo"\n'
+        'dynamic = ["classifiers", "optional-dependencies", "version", "dependencies"]\n',
+    )
+    assert dynamic_build_fields(doc) == ["dependencies", "optional-dependencies"]
+
+
+def test_dynamic_build_fields_empty_for_version_only():
+    doc = tomlkit.parse('[project]\nname = "foo"\ndynamic = ["version"]\n')
+    assert dynamic_build_fields(doc) == []
+
+
+def test_dynamic_build_fields_empty_without_dynamic():
+    assert dynamic_build_fields(tomlkit.parse('[project]\nname = "foo"\n')) == []
+    assert dynamic_build_fields(tomlkit.parse("[tool.uv]\n")) == []
