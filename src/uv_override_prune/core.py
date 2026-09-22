@@ -18,7 +18,7 @@ from .analyze import (
     Result,
     classify,
     duplicate_indexes,
-    find_resolved_version,
+    find_resolved_versions,
     is_pure_lower_bound,
 )
 from .rewrite import get_uv_array, prepare_modified_text, remove_entries
@@ -180,7 +180,7 @@ def evaluate_entry(
             return Result(status="error", value="lock failed")
         lock_doc = tomlkit.parse((tmp_path / "uv.lock").read_text())
 
-    resolved = find_resolved_version(lock_doc, req.name)
+    resolved = find_resolved_versions(lock_doc, req.name)
     return classify(req, resolved)
 
 

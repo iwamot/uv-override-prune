@@ -61,36 +61,51 @@ def duplicate_indexes(entries: Sequence[str]) -> frozenset[int]:
     return frozenset(out)
 
 
-def classify(req: Requirement, resolved: Version | None) -> Result:
-    """Decide redundant/needed status given a Requirement and resolved Version.
+def classify(req: Requirement, resolved: Sequence[Version]) -> Result:
+    """Decide redundant/needed status given a Requirement and resolved Versions.
 
-    `resolved` is None when the package is not present in the resolution
-    (i.e. nothing depends on it, so the override was vacuous).
+    `resolved` is empty when the package is not present in the resolution
+    (i.e. nothing depends on it, so the override was vacuous). It holds
+    several versions when uv forked the resolution on environment markers
+    and locked a different version per fork; the entry is redundant only
+    if every fork satisfies it, and the value lists the versions that
+    decided the verdict.
     """
-    if resolved is None:
+    if not resolved:
         return Result(status="prune", value="(unused)")
-    if req.specifier.contains(str(resolved), prereleases=True):
-        return Result(status="prune", value=str(resolved))
-    return Result(status="keep", value=str(resolved))
+    unsatisfied = [
+        v for v in resolved if not req.specifier.contains(str(v), prereleases=True)
+    ]
+    if unsatisfied:
+        return Result(status="keep", value=_join_versions(unsatisfied))
+    return Result(status="prune", value=_join_versions(resolved))
 
 
-def find_resolved_version(
+def _join_versions(versions: Sequence[Version]) -> str:
+    return ", ".join(str(v) for v in sorted(set(versions)))
+
+
+def find_resolved_versions(
     lock_doc: Mapping[str, object],
     pkg: str,
-) -> Version | None:
-    """Find the resolved version of `pkg` in a parsed uv.lock document.
+) -> list[Version]:
+    """Find every resolved version of `pkg` in a parsed uv.lock document.
 
-    `lock_doc` may be a plain dict or a tomlkit TOMLDocument; only the
-    Mapping protocol is used. Package names are normalised per PEP 503.
+    A package appears once per fork it was resolved differently in, so
+    the list has one entry per `[[package]]` table with that name, in
+    lock order. `lock_doc` may be a plain dict or a tomlkit TOMLDocument;
+    only the Mapping protocol is used. Package names are normalised per
+    PEP 503.
     """
     target = canonicalize_name(pkg)
     packages = lock_doc.get("package")
     if not isinstance(packages, list):
-        return None
+        return []
+    found: list[Version] = []
     for raw_entry in packages:
         if not isinstance(raw_entry, Mapping):
             continue
         entry = cast(Mapping[str, object], raw_entry)
         if canonicalize_name(str(entry.get("name", ""))) == target:
-            return Version(str(entry.get("version", "")))
-    return None
+            found.append(Version(str(entry.get("version", ""))))
+    return found

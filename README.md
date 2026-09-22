@@ -68,6 +68,7 @@ Starting from the existing `uv.lock` matters because `uv lock` keeps already-loc
 - Targets entries in `[tool.uv] override-dependencies` and `constraint-dependencies`.
 - Only specifiers using `>=` and/or `>` are checked. Entries using `==`, `~=`, `<`, `<=`, `!=` (alone or mixed) are skipped.
 - Entries with an environment marker (e.g. `foo>=1.0; python_version >= "3.10"`) are skipped, since the natural `uv lock` resolution doesn't reflect the marker's intent.
+- When uv forked the resolution on environment markers and locked several versions of the package (one per fork), the entry is `[PRUNE]` only if every version satisfies it. `[KEEP]` lists the versions below the bound; `[PRUNE]` lists them all.
 - An entry that repeats an earlier entry in the same section (same package and specifier, ignoring spelling) is reported as `[PRUNE]` with `(duplicate)`. The first copy is evaluated with every copy removed, so its verdict reflects the natural resolution and `--fix` leaves exactly one copy.
 
 ## Known limitations
