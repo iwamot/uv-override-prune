@@ -13,7 +13,6 @@ from uv_override_prune.core import (
     EntryResult,
     apply_fix,
     audit,
-    evaluate_entry,
     evaluate_section,
     load_targets,
 )
@@ -100,53 +99,79 @@ def test_audit_report_preserves_outcomes_and_failure_priority(
     assert report.entries == entries
 
 
-def test_evaluate_entry_skips_non_lower_bound_with_descriptive_value():
-    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
-    result = evaluate_entry(targets, "override-dependencies", "foo==1.0")
-    assert result.status == "skip"
-    assert result.value == "(non-lower-bound)"
+# Identities group equivalent spellings; reasons state the expected public
+# outcome before any lock resolution is needed.
+PREFLIGHT_CASES = [
+    ("ge", "{name}>={version}.0", "(dynamic-metadata)"),
+    ("ge", "{alias} >= {version}.0.0", "(dynamic-metadata)"),
+    ("gt", "{name}>{version}.0", "(dynamic-metadata)"),
+    ("lower-bounds", "{name}>={version}.0,>{version}.1", "(dynamic-metadata)"),
+    ("extras", "{name}[feature]>={version}.0", "(dynamic-metadata)"),
+    ("eq", "{name}=={version}.0", "(non-lower-bound)"),
+    ("compatible", "{name}~={version}.0", "(non-lower-bound)"),
+    ("ne", "{name}!={version}.0", "(non-lower-bound)"),
+    ("le", "{name}<={version}.0", "(non-lower-bound)"),
+    ("lt", "{name}<{version}.0", "(non-lower-bound)"),
+    ("arbitrary", "{name}==={version}.0", "(non-lower-bound)"),
+    ("exclusion", "{name}>={version}.0,!={version}.1", "(non-lower-bound)"),
+    ("range", "{name}>={version}.0,<{version}.2", "(non-lower-bound)"),
+    ("unbounded", "{name}", "(non-lower-bound)"),
+    ("url", "{name} @ https://example.com/package.whl", "(non-lower-bound)"),
+    ("marked-ge", '{name}>={version}.0; python_version >= "3.10"', "(has-marker)"),
+    ("marked-eq", '{name}=={version}.0; python_version >= "3.10"', "(non-lower-bound)"),
+    (None, "not a valid req", "parse error"),
+]
 
 
-def test_evaluate_entry_skips_marker_entry_with_descriptive_value():
-    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
-    result = evaluate_entry(
-        targets,
-        "override-dependencies",
-        'foo>=1.0; python_version >= "3.10"',
-    )
-    assert result.status == "skip"
-    assert result.value == "(has-marker)"
-
-
-def test_evaluate_entry_skips_project_with_dynamic_dependencies():
-    targets = AuditTargets(
-        text='[project]\nname = "foo"\ndynamic = ["dependencies"]\n',
-        base_dir=Path(),
-        lock_text=None,
-        sections=(),
-    )
-    result = evaluate_entry(targets, "override-dependencies", "foo>=1.0")
-    assert result.status == "skip"
-    assert result.value == "(dynamic-metadata)"
-
-
-def test_evaluate_entry_returns_parse_error_for_invalid_entry():
-    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
-    result = evaluate_entry(targets, "override-dependencies", "not a valid req")
-    assert result.status == "error"
-    assert result.value == "parse error"
-
-
-def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
-    targets = AuditTargets(text="", base_dir=Path(), lock_text=None, sections=())
-    items = ["foo==1.0", "foo==1.0", "bar==1.0"]
-    results = list(evaluate_section(targets, "override-dependencies", items))
-    assert [r.status for r in results] == ["skip", "prune", "skip"]
-    assert [r.value for r in results] == [
-        "(non-lower-bound)",
-        "(duplicate)",
-        "(non-lower-bound)",
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(
+    section="override-dependencies",
+    name="foo",
+    version=1,
+    field="dependencies",
+    other_fields=[],
+    cases=PREFLIGHT_CASES + [PREFLIGHT_CASES[0], PREFLIGHT_CASES[-1]],
+)
+@given(
+    section=st.sampled_from(["override-dependencies", "constraint-dependencies"]),
+    name=st.sampled_from(["foo", "some-package", "flask-login"]),
+    version=st.integers(1, 20),
+    field=st.sampled_from(["dependencies", "optional-dependencies", "requires-python"]),
+    other_fields=st.lists(
+        st.sampled_from(["version", "classifiers", "readme", "license"]), unique=True
+    ),
+    cases=st.lists(st.sampled_from(PREFLIGHT_CASES), max_size=30),
+)
+def test_section_preflight_preserves_reasons_and_duplicate_order(
+    section, name, version, field, other_fields, cases
+):
+    identities = [identity for identity, _, _ in cases]
+    expected = [
+        Result("prune", "(duplicate)")
+        if identity is not None and identities.index(identity) != index
+        else Result("error" if identity is None else "skip", reason)
+        for index, (identity, _, reason) in enumerate(cases)
     ]
+    items = [
+        template.format(
+            name=name, alias=name.upper().replace("-", "_"), version=version
+        )
+        for _, template, _ in cases
+    ]
+    original = items.copy()
+    targets = AuditTargets(
+        text=tomlkit.dumps(
+            {
+                "project": {"name": "demo", "dynamic": [field, *other_fields]},
+                "tool": {"uv": {section: items}},
+            }
+        ),
+        base_dir=Path("/"),
+        lock_text=None,
+        sections=((section, tuple(items)),),
+    )
+    assert list(evaluate_section(targets, section, items)) == expected
+    assert items == original
 
 
 FIX_ROWS = st.one_of(
