@@ -267,6 +267,71 @@ def test_fix_removes_selected_occurrences_and_preserves_project(
         assert path.read_text() == after.text
 
 
+@settings(max_examples=100, derandomize=True, database=None, deadline=None)
+@example(mode="absent", critical_fields=[], other_fields=[], position=0)
+@example(mode="static", critical_fields=[], other_fields=[], position=0)
+@example(mode="dynamic", critical_fields=["dependencies"], other_fields=[], position=0)
+@example(
+    mode="dynamic",
+    critical_fields=["optional-dependencies"],
+    other_fields=[],
+    position=0,
+)
+@example(
+    mode="dynamic", critical_fields=["requires-python"], other_fields=[], position=0
+)
+@example(
+    mode="dynamic",
+    critical_fields=[],
+    other_fields=["version", "description", "classifiers", "readme", "license", "urls"],
+    position=0,
+)
+@given(
+    mode=st.sampled_from(["absent", "static", "dynamic"]),
+    critical_fields=st.lists(
+        st.sampled_from(["dependencies", "optional-dependencies", "requires-python"]),
+        unique=True,
+    ),
+    other_fields=st.lists(
+        st.sampled_from(
+            ["version", "description", "classifiers", "readme", "license", "urls"]
+        ),
+        unique=True,
+    ),
+    position=st.integers(0, 9),
+)
+def test_audit_skips_only_projects_with_dynamic_resolution_metadata(
+    mode, critical_fields, other_fields, position
+):
+    # The two input groups encode whether resolution needs a build; their
+    # interleaving must not change whether a dependency-free project is audited.
+    fields = other_fields.copy()
+    for field in critical_fields:
+        fields.insert(position % (len(fields) + 1), field)
+    blocked = mode == "dynamic" and bool(critical_fields)
+    expected = (
+        Result("skip", "(dynamic-metadata)") if blocked else Result("prune", "(unused)")
+    )
+    for section in ("override-dependencies", "constraint-dependencies"):
+        raw = "unused-demo>=1.0"
+        document: dict[str, object] = {"tool": {"uv": {section: [raw]}}}
+        if mode != "absent":
+            project: dict[str, object] = {"name": "demo"}
+            if mode != "dynamic" or "version" not in fields:
+                project["version"] = "1.2.3"
+            if mode == "dynamic":
+                project["dynamic"] = fields
+            document["project"] = project
+        original = tomlkit.dumps(document)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "pyproject.toml"
+            path.write_text(original)
+            report = audit(path)
+            assert report.entries == (EntryResult(section, raw, expected),)
+            assert path.read_text() == original
+            assert not path.with_name("uv.lock").exists()
+
+
 def test_audit_keeps_override_the_locked_versions_still_need(tmp_path):
     """Runs the real `uv lock` against PyPI.
 
