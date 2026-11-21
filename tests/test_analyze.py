@@ -1,3 +1,5 @@
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -34,55 +36,32 @@ def test_is_pure_lower_bound_rejects_no_specifier():
     assert not is_pure_lower_bound(Requirement("foo"))
 
 
-def test_classify_prune_when_resolution_missing():
-    result = classify(Requirement("foo>=1.0"), [])
-    assert result.status == "prune"
-    assert result.value == "(unused)"
+RELEASES = st.tuples(st.integers(0, 50), st.integers(0, 50))
 
 
-def test_classify_prune_when_satisfied():
-    result = classify(Requirement("foo>=1.0"), [Version("2.0")])
-    assert result.status == "prune"
-    assert result.value == "2.0"
-
-
-def test_classify_prune_at_exact_lower_bound():
-    result = classify(Requirement("foo>=2.0"), [Version("2.0")])
-    assert result.status == "prune"
-    assert result.value == "2.0"
-
-
-def test_classify_keep_when_below_bound():
-    result = classify(Requirement("foo>=2.0"), [Version("1.0")])
-    assert result.status == "keep"
-    assert result.value == "1.0"
-
-
-def test_classify_keep_at_exact_strict_lower_bound():
-    result = classify(Requirement("foo>2.0"), [Version("2.0")])
-    assert result.status == "keep"
-    assert result.value == "2.0"
-
-
-def test_classify_keep_lists_only_the_forks_below_bound():
-    result = classify(
-        Requirement("foo>=2.0"),
-        [Version("2.1"), Version("1.9"), Version("1.8")],
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(bound=(1, 0), strict=False, releases=[])
+@example(bound=(2, 0), strict=False, releases=[(2, 1), (2, 0), (2, 1)])
+@example(bound=(2, 0), strict=True, releases=[(2, 0)])
+@example(bound=(2, 0), strict=False, releases=[(2, 1), (1, 9), (1, 8), (1, 9)])
+@given(bound=RELEASES, strict=st.booleans(), releases=st.lists(RELEASES, max_size=20))
+def test_classification_agrees_with_numeric_bounds(bound, strict, releases):
+    # Plain major.minor releases compare as integer pairs, independently of
+    # packaging's specifier implementation. Other PEP 440 forms are outside
+    # this generated domain.
+    major, minor = bound
+    op = ">" if strict else ">="
+    req = Requirement(f"foo{op}{major}.{minor}")
+    resolved = [Version(f"{major}.{minor}") for major, minor in releases]
+    below = [r for r in releases if r < bound or (strict and r == bound)]
+    expected = ", ".join(
+        f"{major}.{minor}" for major, minor in sorted(set(below or releases))
     )
-    assert result.status == "keep"
-    assert result.value == "1.8, 1.9"
-
-
-def test_classify_prune_lists_every_fork_when_all_satisfy():
-    result = classify(Requirement("foo>=2.0"), [Version("2.1"), Version("2.0")])
-    assert result.status == "prune"
-    assert result.value == "2.0, 2.1"
-
-
-def test_classify_collapses_repeated_versions():
-    result = classify(Requirement("foo>=2.0"), [Version("2.1"), Version("2.1")])
-    assert result.status == "prune"
-    assert result.value == "2.1"
+    result = classify(req, resolved)
+    assert result.status == ("keep" if below else "prune")
+    assert result.value == (expected if releases else "(unused)")
+    assert classify(req, resolved[::-1]) == result
+    assert classify(req, resolved + resolved) == result
 
 
 def test_find_resolved_versions_finds_match():

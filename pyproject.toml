@@ -39,6 +39,7 @@ Issues = "https://github.com/iwamot/uv-override-prune/issues"
 # unlike a dev extra — is not published in the wheel metadata.
 [dependency-groups]
 dev = [
+    "hypothesis==6.170.17",
     "pip-licenses==5.5.5",
     "pytest==9.2.0",
     "pytest-cov==7.1.0",
