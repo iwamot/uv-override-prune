@@ -1,5 +1,7 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import tomlkit
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from packaging.version import Version
@@ -9,6 +11,7 @@ from uv_override_prune.core import (
     AuditReport,
     AuditTargets,
     EntryResult,
+    apply_fix,
     audit,
     evaluate_entry,
     evaluate_section,
@@ -146,15 +149,97 @@ def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
     ]
 
 
-def test_load_targets_reads_lockfile_next_to_pyproject(tmp_path):
-    (tmp_path / "pyproject.toml").write_text(LOCK_AWARE_PYPROJECT)
-    (tmp_path / "uv.lock").write_text("version = 1\n")
-    assert load_targets(tmp_path / "pyproject.toml").lock_text == "version = 1\n"
+FIX_ROWS = st.one_of(
+    st.none(),
+    st.lists(
+        st.tuples(st.integers(0, 20), st.integers(0, 3), st.integers(0, 3)), max_size=5
+    ),
+)
 
 
-def test_load_targets_has_no_lock_text_without_lockfile(tmp_path):
-    (tmp_path / "pyproject.toml").write_text(LOCK_AWARE_PYPROJECT)
-    assert load_targets(tmp_path / "pyproject.toml").lock_text is None
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(
+    overrides=[(1, 1, 2), (2, 2, 0)], constraints=[(1, 0, 2)], note="", locked=True
+)
+@example(overrides=None, constraints=[], note="", locked=False)
+@given(
+    overrides=FIX_ROWS,
+    constraints=FIX_ROWS,
+    note=st.text(max_size=20),
+    locked=st.booleans(),
+)
+def test_fix_removes_selected_occurrences_and_preserves_project(
+    overrides, constraints, note, locked
+):
+    metadata = {
+        "project": {"name": "demo", "description": note},
+        "tool": {"other": {"note": note}},
+    }
+    prefix = "# Project metadata\n" + tomlkit.dumps(metadata)
+    lines = [prefix, "\n[tool.uv]\n"]
+    before_sections: dict[str, list[str]] = {}
+    remaining: dict[str, list[str]] = {}
+    removals: dict[str, list[str]] = {}
+    untouched = [prefix]
+    for section, rows in (
+        ("override-dependencies", overrides),
+        ("constraint-dependencies", constraints),
+    ):
+        if rows is None:
+            continue
+        header = f"# Keep {section}\n{section} = [\n"
+        lines.append(header)
+        untouched.append(f"# Keep {section}\n")
+        before_sections[section] = []
+        remaining[section] = []
+        removals[section] = []
+        for index, (version, kept, removed) in enumerate(rows):
+            raw = f"pkg{index}>={version}.0"
+            for deleted, count in ((True, removed), (False, kept)):
+                for copy in range(count):
+                    label = "remove" if deleted else "keep"
+                    line = f'    "{raw}",  # {section} {label} {index}-{copy}\n'
+                    lines.append(line)
+                    before_sections[section].append(raw)
+                    if deleted:
+                        removals[section].append(raw)
+                    else:
+                        remaining[section].append(raw)
+                        untouched.append(line)
+        lines.append("]\n")
+    original = "".join(lines)
+    expected = {
+        "project": metadata["project"],
+        "tool": {"other": {"note": note}, "uv": remaining},
+    }
+    lock_text = "version = 1\n# Keep locked versions\n"
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        path = root / "pyproject.toml"
+        lock = root / "uv.lock"
+        path.write_text(original)
+        if locked:
+            lock.write_text(lock_text)
+        before = load_targets(path)
+        assert before.text == original
+        assert before.base_dir == root
+        assert before.lock_text == (lock_text if locked else None)
+        assert before.sections == tuple(
+            (section, tuple(entries)) for section, entries in before_sections.items()
+        )
+
+        apply_fix(path, removals)
+        after = load_targets(str(path))
+        assert tomlkit.parse(after.text) == expected
+        assert after.base_dir == before.base_dir
+        assert after.lock_text == before.lock_text
+        assert after.sections == tuple(
+            (section, tuple(entries)) for section, entries in remaining.items()
+        )
+        assert all(fragment in after.text for fragment in untouched)
+        assert lock.exists() == locked
+        apply_fix(path, {})
+        assert path.read_text() == after.text
 
 
 def test_audit_keeps_override_the_locked_versions_still_need(tmp_path):

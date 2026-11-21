@@ -8,19 +8,9 @@ from packaging.version import Version
 
 from uv_override_prune.rewrite import (
     dynamic_build_fields,
-    get_uv_array,
     prepare_modified_text,
-    remove_entries,
     rewrite_paths,
 )
-
-
-def test_get_uv_array_returns_entries():
-    doc = tomlkit.parse(
-        '[tool.uv]\noverride-dependencies = ["foo>=1.0", "bar>=2.0"]\n',
-    )
-    arr = get_uv_array(doc, "override-dependencies")
-    assert [str(x) for x in arr] == ["foo>=1.0", "bar>=2.0"]
 
 
 @settings(max_examples=200, derandomize=True, database=None, deadline=None)
@@ -160,53 +150,6 @@ def test_rewrite_paths_handles_non_string_source_path():
     doc = tomlkit.parse(original)
     rewrite_paths(doc, Path("/projects/foo"))
     assert tomlkit.dumps(doc) == original
-
-
-def test_remove_entries_drops_one_from_array():
-    doc = tomlkit.parse(
-        '[tool.uv]\noverride-dependencies = ["foo>=1.0", "bar>=2.0", "baz>=3.0"]\n',
-    )
-    remove_entries(doc, {"override-dependencies": ["bar>=2.0"]})
-    arr = [str(x) for x in get_uv_array(doc, "override-dependencies")]
-    assert arr == ["foo>=1.0", "baz>=3.0"]
-
-
-def test_remove_entries_handles_multiple_sections():
-    doc = tomlkit.parse(
-        "[tool.uv]\n"
-        'override-dependencies = ["foo>=1.0", "bar>=2.0"]\n'
-        'constraint-dependencies = ["x>=1.0", "y>=2.0"]\n',
-    )
-    remove_entries(
-        doc,
-        {
-            "override-dependencies": ["bar>=2.0"],
-            "constraint-dependencies": ["x>=1.0"],
-        },
-    )
-    overrides = [str(x) for x in get_uv_array(doc, "override-dependencies")]
-    constraints = [str(x) for x in get_uv_array(doc, "constraint-dependencies")]
-    assert overrides == ["foo>=1.0"]
-    assert constraints == ["y>=2.0"]
-
-
-def test_remove_entries_preserves_surrounding_comments():
-    original = (
-        "[tool.uv]\n"
-        "# Security overrides\n"
-        "override-dependencies = [\n"
-        '    "foo>=1.0",  # CVE-1\n'
-        '    "bar>=2.0",  # to be removed\n'
-        '    "baz>=3.0",  # CVE-3\n'
-        "]\n"
-    )
-    doc = tomlkit.parse(original)
-    remove_entries(doc, {"override-dependencies": ["bar>=2.0"]})
-    output = tomlkit.dumps(doc)
-    assert "# Security overrides" in output
-    assert "# CVE-1" in output
-    assert "# CVE-3" in output
-    assert "bar>=2.0" not in output
 
 
 @settings(max_examples=200, derandomize=True, database=None, deadline=None)
