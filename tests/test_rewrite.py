@@ -15,6 +15,8 @@ from uv_override_prune.rewrite import (
 
 @settings(max_examples=200, derandomize=True, database=None, deadline=None)
 @example(
+    source_mode="paths",
+    workspace_mode="members",
     directory="demo",
     name="local-pkg",
     sources=[0, 1, 2, 3, 4],
@@ -23,6 +25,8 @@ from uv_override_prune.rewrite import (
     description="",
 )
 @given(
+    source_mode=st.sampled_from(["absent", "empty", "git", "paths"]),
+    workspace_mode=st.sampled_from(["absent", "exclude", "members"]),
     directory=st.text(alphabet="abcXYZ012-_", min_size=1, max_size=12),
     name=st.text(alphabet="abcXYZ012-_ 日本語", min_size=1, max_size=12),
     sources=st.lists(st.integers(0, 4), max_size=8),
@@ -31,7 +35,7 @@ from uv_override_prune.rewrite import (
     description=st.text(max_size=20),
 )
 def test_lock_input_preserves_path_targets_and_other_metadata(
-    directory, name, sources, members, readme, description
+    source_mode, workspace_mode, directory, name, sources, members, readme, description
 ):
     base = Path("/projects") / directory / "project"
     # Each spelling has a known target independent of the path rewriter.
@@ -43,41 +47,44 @@ def test_lock_input_preserves_path_targets_and_other_metadata(
         (f"/absolute/../{name}", f"/absolute/../{name}"),
     ]
 
-    def document(source_paths, member_paths, readme_path, as_table, entries):
-        return {
-            "project": {
-                "name": "demo",
-                "description": description,
-                "readme": {"file": readme_path, "content-type": "text/markdown"}
-                if as_table
-                else readme_path,
-            },
-            "tool": {
-                "uv": {
-                    "override-dependencies": entries,
-                    "sources": {
-                        "remote": {
-                            "git": "https://example.com/repo.git",
-                            "branch": "main",
-                        },
-                        **{
-                            f"pkg{i}": {"path": path, "editable": True}
-                            for i, path in enumerate(source_paths)
-                        },
-                    },
-                    "workspace": {"members": member_paths, "exclude": ["excluded/*"]},
-                },
-                "other": {"note": description},
-            },
-        }
+    def document(source_paths, member_paths, readme_path, readme_form, entries):
+        project: dict[str, object] = {"name": "demo", "description": description}
+        if readme_form != "absent":
+            project["readme"] = {
+                "string": readme_path,
+                "file": {"file": readme_path, "content-type": "text/markdown"},
+                "inline": {"text": description, "content-type": "text/markdown"},
+            }[readme_form]
+        uv: dict[str, object] = {"override-dependencies": entries}
+        if source_mode != "absent":
+            source_table: dict[str, object] = {}
+            if source_mode in ("git", "paths"):
+                source_table["remote"] = {
+                    "git": "https://example.com/repo.git",
+                    "branch": "main",
+                }
+            if source_mode == "paths":
+                source_table.update(
+                    {
+                        f"pkg{i}": {"path": path, "editable": True}
+                        for i, path in enumerate(source_paths)
+                    }
+                )
+            uv["sources"] = source_table
+        if workspace_mode != "absent":
+            workspace: dict[str, object] = {"exclude": ["excluded/*"]}
+            if workspace_mode == "members":
+                workspace["members"] = member_paths
+            uv["workspace"] = workspace
+        return {"project": project, "tool": {"uv": uv, "other": {"note": description}}}
 
-    for table_readme in (False, True):
+    for readme_form in ("absent", "inline", "string", "file"):
         original = tomlkit.dumps(
             document(
                 [spellings[i][0] for i in sources],
                 [spellings[i][0] for i in members],
                 spellings[readme][0],
-                table_readme,
+                readme_form,
                 ["foo>=1.0"],
             )
         )
@@ -85,7 +92,7 @@ def test_lock_input_preserves_path_targets_and_other_metadata(
             [spellings[i][1] for i in sources],
             [spellings[i][1] for i in members],
             spellings[readme][1],
-            table_readme,
+            readme_form,
             [],
         )
         result = prepare_modified_text(
@@ -96,46 +103,6 @@ def test_lock_input_preserves_path_targets_and_other_metadata(
             prepare_modified_text(result, "override-dependencies", "foo>=1.0", base)
             == result
         )
-
-
-def test_rewrite_paths_no_change_when_no_paths():
-    original = '[project]\nname = "test"\n'
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_empty_sources_table():
-    original = "[tool.uv.sources]\n"
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_workspace_without_members_key():
-    original = "[tool.uv.workspace]\nexclude = []\n"
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_readme_table_without_file_key():
-    original = (
-        '[project.readme]\ntext = "inline content"\ncontent-type = "text/markdown"\n'
-    )
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_sources_without_path_key_left_alone():
-    original = (
-        "[tool.uv.sources]\n"
-        'mypkg = { git = "https://example.com/repo.git", branch = "main" }\n'
-    )
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
 
 
 def test_rewrite_paths_handles_non_table_tool_uv():
