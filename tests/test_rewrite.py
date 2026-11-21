@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import tomlkit
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 from uv_override_prune.rewrite import (
     dynamic_build_fields,
@@ -178,16 +180,73 @@ def test_remove_entries_preserves_surrounding_comments():
     assert "bar>=2.0" not in output
 
 
-def test_prepare_modified_text_removes_entry():
-    original = '[tool.uv]\noverride-dependencies = ["foo>=1.0", "bar>=2.0"]\n'
-    result = prepare_modified_text(
-        original,
-        "override-dependencies",
-        "bar>=2.0",
-        Path("/"),
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(
+    section="override-dependencies",
+    name="click",
+    version=8,
+    entries=[(True, "click>=8.0"), (False, "foo>=1.0"), (True, "Click >= 8.0.0")],
+    description="",
+)
+@example(
+    section="override-dependencies",
+    name="bar",
+    version=2,
+    entries=[(False, "foo>=1.0"), (True, "bar>=2.0"), (False, "baz>=3.0")],
+    description="",
+)
+@given(
+    section=st.sampled_from(["override-dependencies", "constraint-dependencies"]),
+    name=st.sampled_from(["click", "bar", "some-package"]),
+    version=st.integers(1, 20),
+    entries=st.lists(
+        st.sampled_from(
+            [
+                (True, "{name}>={version}.0"),
+                (True, "{alias} >= {version}.0.0"),
+                (False, "foo>=1.0"),
+                (False, "{name}>={version}.1"),
+                (False, "{name}>{version}.0"),
+                (False, "{name}[feature]>={version}.0"),
+                (False, '{name}>={version}.0; python_version >= "3.10"'),
+                (False, "not a valid req"),
+            ]
+        ),
+        max_size=20,
+    ),
+    description=st.text(max_size=30),
+)
+def test_preparing_lock_input_removes_only_equivalent_requirements(
+    section, name, version, entries, description
+):
+    target = f"{name}>={version}.0"
+    entries = [
+        (
+            removed,
+            text.format(
+                name=name, alias=name.upper().replace("-", "_"), version=version
+            ),
+        )
+        for removed, text in entries
+    ]
+    other = (
+        "constraint-dependencies"
+        if section == "override-dependencies"
+        else "override-dependencies"
     )
-    assert '"bar>=2.0"' not in result
-    assert '"foo>=1.0"' in result
+    project = {"name": "demo", "version": "1.2.3", "description": description}
+    retained = {
+        section: [text for removed, text in entries if not removed],
+        other: [target],
+    }
+    expected = {"project": project, "tool": {"uv": retained}}
+    before = {
+        "project": project,
+        "tool": {"uv": {**retained, section: [text for _, text in entries]}},
+    }
+    result = prepare_modified_text(tomlkit.dumps(before), section, target, Path("/"))
+    assert tomlkit.parse(result) == expected
+    assert prepare_modified_text(result, section, target, Path("/")) == result
 
 
 def test_prepare_modified_text_rewrites_readme_path():
@@ -202,42 +261,6 @@ def test_prepare_modified_text_rewrites_readme_path():
         Path("/projects/foo"),
     )
     assert 'readme = "/projects/foo/README.md"' in result
-
-
-def test_prepare_modified_text_removes_every_equivalent_copy():
-    original = (
-        "[tool.uv]\n"
-        'override-dependencies = ["click>=8.0", "foo>=1.0", "Click >= 8.0.0"]\n'
-    )
-    result = prepare_modified_text(
-        original,
-        "override-dependencies",
-        "click>=8.0",
-        Path("/projects/foo"),
-    )
-    assert 'override-dependencies = ["foo>=1.0"]' in result
-
-
-def test_prepare_modified_text_keeps_same_name_with_other_specifier():
-    original = '[tool.uv]\noverride-dependencies = ["click>=8.0", "click>=8.1"]\n'
-    result = prepare_modified_text(
-        original,
-        "override-dependencies",
-        "click>=8.0",
-        Path("/projects/foo"),
-    )
-    assert 'override-dependencies = ["click>=8.1"]' in result
-
-
-def test_prepare_modified_text_leaves_unparsable_siblings_alone():
-    original = '[tool.uv]\noverride-dependencies = ["click>=8.0", "not a valid req"]\n'
-    result = prepare_modified_text(
-        original,
-        "override-dependencies",
-        "click>=8.0",
-        Path("/projects/foo"),
-    )
-    assert 'override-dependencies = ["not a valid req"]' in result
 
 
 def test_pin_dynamic_version_replaces_dynamic_version_with_placeholder():
