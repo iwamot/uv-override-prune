@@ -8,7 +8,6 @@ from uv_override_prune.analyze import (
     duplicate_indexes,
     find_resolved_versions,
     is_pure_lower_bound,
-    is_same_requirement,
 )
 
 
@@ -123,37 +122,60 @@ def test_find_resolved_versions_returns_empty_when_package_field_not_list():
     assert find_resolved_versions(lock_doc, "foo") == []
 
 
-def test_duplicate_indexes_empty_when_all_distinct():
-    assert duplicate_indexes(["foo>=1.0", "bar>=1.0", "foo>=2.0"]) == frozenset()
-
-
-def test_duplicate_indexes_flags_later_copies_only():
-    entries = ["foo>=1.0", "bar>=1.0", "foo>=1.0", "foo>=1.0"]
-    assert duplicate_indexes(entries) == frozenset({2, 3})
-
-
-def test_duplicate_indexes_matches_equivalent_spellings():
-    entries = ["click>=8.0", "Click >= 8.0.0"]
-    assert duplicate_indexes(entries) == frozenset({1})
-
-
-def test_duplicate_indexes_distinguishes_markers():
-    entries = ["foo>=1.0", 'foo>=1.0; python_version >= "3.10"']
-    assert duplicate_indexes(entries) == frozenset()
-
-
-def test_duplicate_indexes_ignores_unparsable_entries():
-    entries = ["not a valid req", "not a valid req", "foo>=1.0"]
-    assert duplicate_indexes(entries) == frozenset()
-
-
-def test_is_same_requirement_matches_equivalent_spelling():
-    assert is_same_requirement("Click >= 8.0.0", Requirement("click>=8.0"))
-
-
-def test_is_same_requirement_rejects_different_specifier():
-    assert not is_same_requirement("click>=8.1", Requirement("click>=8.0"))
-
-
-def test_is_same_requirement_rejects_unparsable_text():
-    assert not is_same_requirement("not a valid req", Requirement("click>=8.0"))
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(name="foo", version=1, entries=[])
+@example(
+    name="foo",
+    version=1,
+    entries=[
+        ("base", "foo>=1.0"),
+        ("other", "bar>=1.0"),
+        ("base", "foo>=1.0"),
+        ("base", "foo>=1.0"),
+    ],
+)
+@example(
+    name="click",
+    version=8,
+    entries=[("base", "click>=8.0"), ("base", "Click >= 8.0.0")],
+)
+@given(
+    name=st.sampled_from(["foo", "click", "some-package"]),
+    version=st.integers(0, 20),
+    entries=st.lists(
+        st.sampled_from(
+            [
+                ("base", "{name}>={version}.0"),
+                ("base", "{alias} >= {version}.0.0"),
+                ("higher", "{name}>={version}.1"),
+                ("strict", "{name}>{version}.0"),
+                ("other", "other-{name}>={version}.0"),
+                ("marked", '{name}>={version}.0; python_version >= "3.10"'),
+                ("marked", "{alias} >= {version}.0.0; python_version >= '3.10'"),
+                ("extras", "{name}[a,b]>={version}.0"),
+                ("extras", "{alias}[b,a]>={version}.0.0"),
+                (None, "not a valid req"),
+            ]
+        ),
+        max_size=30,
+    ),
+)
+def test_duplicate_removal_keeps_the_first_of_each_requirement(name, version, entries):
+    # Identities describe equivalent input spellings. The oracle uses their
+    # first positions without parsing requirements or reproducing a seen set.
+    identities = [identity for identity, _ in entries]
+    expected = frozenset(
+        i
+        for i, identity in enumerate(identities)
+        if identity is not None and i != identities.index(identity)
+    )
+    original = [
+        text.format(name=name, alias=name.upper().replace("-", "_"), version=version)
+        for _, text in entries
+    ]
+    values = original.copy()
+    duplicates = duplicate_indexes(values)
+    assert duplicates == expected
+    assert values == original
+    survivors = [value for i, value in enumerate(values) if i not in duplicates]
+    assert duplicate_indexes(survivors) == frozenset()
