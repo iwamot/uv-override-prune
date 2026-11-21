@@ -1,13 +1,14 @@
+from collections.abc import Mapping
 from pathlib import Path
 
 import tomlkit
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+from packaging.version import Version
 
 from uv_override_prune.rewrite import (
     dynamic_build_fields,
     get_uv_array,
-    pin_dynamic_version,
     prepare_modified_text,
     remove_entries,
     rewrite_paths,
@@ -263,51 +264,85 @@ def test_prepare_modified_text_rewrites_readme_path():
     assert 'readme = "/projects/foo/README.md"' in result
 
 
-def test_pin_dynamic_version_replaces_dynamic_version_with_placeholder():
-    doc = tomlkit.parse('[project]\nname = "foo"\ndynamic = ["version"]\n')
-    pin_dynamic_version(doc)
-    assert tomlkit.dumps(doc) == '[project]\nname = "foo"\nversion = "0.0.0"\n'
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(mode="dynamic_version", fields=[], position=0, static_version="1.2.3", note="")
+@example(
+    mode="dynamic_version",
+    fields=["dependencies"],
+    position=0,
+    static_version="1.2.3",
+    note="",
+)
+@example(
+    mode="dynamic_version",
+    fields=["classifiers", "requires-python"],
+    position=1,
+    static_version="1.2.3",
+    note="",
+)
+@given(
+    mode=st.sampled_from(["absent", "static", "other_dynamic", "dynamic_version"]),
+    fields=st.lists(
+        st.sampled_from(
+            [
+                "dependencies",
+                "optional-dependencies",
+                "requires-python",
+                "classifiers",
+                "readme",
+                "license",
+            ]
+        ),
+        unique=True,
+    ),
+    position=st.integers(0, 6),
+    static_version=st.sampled_from(["1.2.3", "2.0rc1", "0.1.dev1"]),
+    note=st.text(max_size=20),
+)
+def test_lock_input_has_static_version_without_changing_other_metadata(
+    mode, fields, position, static_version, note
+):
+    original: dict[str, object] = {
+        "tool": {
+            "uv": {"override-dependencies": ["remove>=1.0"]},
+            "other": {"note": note},
+        }
+    }
+    expected: dict[str, object] = {
+        "tool": {"uv": {"override-dependencies": []}, "other": {"note": note}}
+    }
+    project: dict[str, object] = {"name": "demo"}
+    expected_project = project.copy()
+    if mode == "static":
+        project["version"] = expected_project["version"] = static_version
+    elif mode == "other_dynamic":
+        project["dynamic"] = expected_project["dynamic"] = fields
+    elif mode == "dynamic_version":
+        dynamic = fields.copy()
+        dynamic.insert(position % (len(fields) + 1), "version")
+        project["dynamic"] = dynamic
+        if fields:
+            expected_project["dynamic"] = fields
+    if mode != "absent":
+        original["project"] = project
+        expected["project"] = expected_project
 
-
-def test_pin_dynamic_version_keeps_other_dynamic_fields():
-    doc = tomlkit.parse(
-        '[project]\nname = "foo"\ndynamic = ["version", "dependencies"]\n',
+    result = prepare_modified_text(
+        tomlkit.dumps(original), "override-dependencies", "remove>=1.0", Path("/")
     )
-    pin_dynamic_version(doc)
-    assert tomlkit.dumps(doc) == (
-        '[project]\nname = "foo"\ndynamic = ["dependencies"]\nversion = "0.0.0"\n'
+    parsed = tomlkit.parse(result)
+    if mode == "dynamic_version":
+        metadata = parsed.get("project")
+        assert isinstance(metadata, Mapping)
+        version = metadata.get("version")
+        assert isinstance(version, str)
+        Version(version)
+        expected_project["version"] = version
+    assert parsed == expected
+    assert (
+        prepare_modified_text(result, "override-dependencies", "remove>=1.0", Path("/"))
+        == result
     )
-
-
-def test_pin_dynamic_version_leaves_static_version_alone():
-    original = '[project]\nname = "foo"\nversion = "1.2.3"\n'
-    doc = tomlkit.parse(original)
-    pin_dynamic_version(doc)
-    assert tomlkit.dumps(doc) == original
-
-
-def test_pin_dynamic_version_leaves_dynamic_without_version_alone():
-    original = '[project]\nname = "foo"\ndynamic = ["dependencies"]\n'
-    doc = tomlkit.parse(original)
-    pin_dynamic_version(doc)
-    assert tomlkit.dumps(doc) == original
-
-
-def test_pin_dynamic_version_ignores_missing_project_table():
-    original = "[tool.uv]\noverride-dependencies = []\n"
-    doc = tomlkit.parse(original)
-    pin_dynamic_version(doc)
-    assert tomlkit.dumps(doc) == original
-
-
-def test_prepare_modified_text_pins_dynamic_version():
-    text = (
-        '[project]\nname = "foo"\ndynamic = ["version"]\n\n'
-        '[tool.uv]\noverride-dependencies = ["bar>=1.0"]\n'
-    )
-    result = prepare_modified_text(text, "override-dependencies", "bar>=1.0", Path())
-    assert 'version = "0.0.0"' in result
-    assert "dynamic" not in result
 
 
 def test_dynamic_build_fields_lists_resolution_fields_only():
