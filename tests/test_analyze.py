@@ -1,3 +1,4 @@
+import tomlkit
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from packaging.requirements import Requirement
@@ -63,43 +64,46 @@ def test_classification_agrees_with_numeric_bounds(bound, strict, releases):
     assert classify(req, resolved + resolved) == result
 
 
-def test_find_resolved_versions_finds_match():
-    lock_doc = {
-        "package": [
-            {"name": "foo", "version": "1.0.0"},
-            {"name": "bar", "version": "2.0.0"},
-        ],
-    }
-    assert find_resolved_versions(lock_doc, "foo") == [Version("1.0.0")]
-
-
-def test_find_resolved_versions_returns_every_fork_in_lock_order():
-    lock_doc = {
-        "package": [
-            {"name": "foo", "version": "2.0.0"},
-            {"name": "bar", "version": "1.0.0"},
-            {"name": "foo", "version": "1.5.0"},
-        ],
-    }
-    assert find_resolved_versions(lock_doc, "foo") == [
-        Version("2.0.0"),
-        Version("1.5.0"),
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(
+    spellings=("foo", "Foo", "FOO"),
+    rows=[(True, (2, 0), 0), (False, (3, 0), 0), (True, (1, 5), 1), (True, (1, 5), 2)],
+)
+@example(
+    spellings=("flask-login", "Flask_Login", "flask.login"), rows=[(True, (0, 6), 0)]
+)
+@example(
+    spellings=("ruamel-yaml", "ruamel.yaml", "RUAMEL_YAML"), rows=[(True, (0, 18), 0)]
+)
+@given(
+    spellings=st.sampled_from(
+        [
+            ("foo", "Foo", "FOO"),
+            ("flask-login", "Flask_Login", "flask.login"),
+            ("ruamel-yaml", "ruamel.yaml", "RUAMEL_YAML"),
+        ]
+    ),
+    rows=st.lists(st.tuples(st.booleans(), RELEASES, st.integers(0, 2)), max_size=30),
+)
+def test_lock_lookup_returns_matching_forks_in_their_original_order(spellings, rows):
+    # Matching rows are identified before names are spelled, so the oracle
+    # does not share the lookup's package-name normalization.
+    packages = [
+        {
+            "name": spellings[spelling] if matches else "other-" + spellings[0],
+            "version": f"{major}.{minor}",
+        }
+        for matches, (major, minor), spelling in rows
     ]
-
-
-def test_find_resolved_versions_normalises_pep503():
-    lock_doc = {"package": [{"name": "flask-login", "version": "0.6.0"}]}
-    assert find_resolved_versions(lock_doc, "Flask_Login") == [Version("0.6.0")]
-
-
-def test_find_resolved_versions_handles_dotted_separators():
-    lock_doc = {"package": [{"name": "ruamel-yaml", "version": "0.18.0"}]}
-    assert find_resolved_versions(lock_doc, "ruamel.yaml") == [Version("0.18.0")]
-
-
-def test_find_resolved_versions_returns_empty_when_absent():
-    lock_doc = {"package": [{"name": "foo", "version": "1.0.0"}]}
-    assert find_resolved_versions(lock_doc, "missing") == []
+    expected = [
+        Version(f"{major}.{minor}") for matches, (major, minor), _ in rows if matches
+    ]
+    plain = {"package": packages}
+    parsed = tomlkit.parse(tomlkit.dumps(plain))
+    for document in (plain, parsed):
+        for name in spellings:
+            assert find_resolved_versions(document, name) == expected
+        assert find_resolved_versions(document, "missing-" + spellings[0]) == []
 
 
 def test_find_resolved_versions_handles_empty_lock():
