@@ -8,33 +8,7 @@ from uv_override_prune.analyze import (
     classify,
     duplicate_indexes,
     find_resolved_versions,
-    is_pure_lower_bound,
 )
-
-
-def test_is_pure_lower_bound_accepts_ge():
-    assert is_pure_lower_bound(Requirement("foo>=1.0"))
-
-
-def test_is_pure_lower_bound_accepts_gt():
-    assert is_pure_lower_bound(Requirement("foo>1.0"))
-
-
-def test_is_pure_lower_bound_rejects_eq():
-    assert not is_pure_lower_bound(Requirement("foo==1.0"))
-
-
-def test_is_pure_lower_bound_rejects_tilde_eq():
-    assert not is_pure_lower_bound(Requirement("foo~=1.0"))
-
-
-def test_is_pure_lower_bound_rejects_mixed_with_ne():
-    assert not is_pure_lower_bound(Requirement("foo>=1.0,!=2.0"))
-
-
-def test_is_pure_lower_bound_rejects_no_specifier():
-    assert not is_pure_lower_bound(Requirement("foo"))
-
 
 RELEASES = st.tuples(st.integers(0, 50), st.integers(0, 50))
 
