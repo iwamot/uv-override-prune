@@ -23,43 +23,89 @@ def test_get_uv_array_returns_entries():
     assert [str(x) for x in arr] == ["foo>=1.0", "bar>=2.0"]
 
 
-def test_rewrite_paths_makes_sources_path_absolute():
-    doc = tomlkit.parse(
-        '[tool.uv.sources]\nmypkg = { path = "./local-pkg" }\n',
-    )
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert '"/projects/foo/local-pkg"' in tomlkit.dumps(doc)
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(
+    directory="demo",
+    name="local-pkg",
+    sources=[0, 1, 2, 3, 4],
+    members=[4, 3, 2, 1, 0, 0],
+    readme=0,
+    description="",
+)
+@given(
+    directory=st.text(alphabet="abcXYZ012-_", min_size=1, max_size=12),
+    name=st.text(alphabet="abcXYZ012-_ 日本語", min_size=1, max_size=12),
+    sources=st.lists(st.integers(0, 4), max_size=8),
+    members=st.lists(st.integers(0, 4), max_size=8),
+    readme=st.integers(0, 4),
+    description=st.text(max_size=20),
+)
+def test_lock_input_preserves_path_targets_and_other_metadata(
+    directory, name, sources, members, readme, description
+):
+    base = Path("/projects") / directory / "project"
+    # Each spelling has a known target independent of the path rewriter.
+    spellings = [
+        (name, str(base / name)),
+        (f"./{name}", str(base / name)),
+        (f"nested/../{name}", str(base / name)),
+        (f"../{name}", str(base.parent / name)),
+        (f"/absolute/../{name}", f"/absolute/../{name}"),
+    ]
 
+    def document(source_paths, member_paths, readme_path, as_table, entries):
+        return {
+            "project": {
+                "name": "demo",
+                "description": description,
+                "readme": {"file": readme_path, "content-type": "text/markdown"}
+                if as_table
+                else readme_path,
+            },
+            "tool": {
+                "uv": {
+                    "override-dependencies": entries,
+                    "sources": {
+                        "remote": {
+                            "git": "https://example.com/repo.git",
+                            "branch": "main",
+                        },
+                        **{
+                            f"pkg{i}": {"path": path, "editable": True}
+                            for i, path in enumerate(source_paths)
+                        },
+                    },
+                    "workspace": {"members": member_paths, "exclude": ["excluded/*"]},
+                },
+                "other": {"note": description},
+            },
+        }
 
-def test_rewrite_paths_leaves_absolute_sources_path_alone():
-    original = '[tool.uv.sources]\nmypkg = { path = "/abs/path" }\n'
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_makes_workspace_members_absolute():
-    doc = tomlkit.parse(
-        '[tool.uv.workspace]\nmembers = ["./pkg-a", "/abs/pkg-b"]\n',
-    )
-    rewrite_paths(doc, Path("/projects/foo"))
-    output = tomlkit.dumps(doc)
-    assert '"/projects/foo/pkg-a"' in output
-    assert '"/abs/pkg-b"' in output
-
-
-def test_rewrite_paths_makes_readme_string_absolute():
-    doc = tomlkit.parse('[project]\nreadme = "README.md"\n')
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert 'readme = "/projects/foo/README.md"' in tomlkit.dumps(doc)
-
-
-def test_rewrite_paths_handles_readme_table_with_file():
-    doc = tomlkit.parse(
-        '[project.readme]\nfile = "docs/README.md"\ncontent-type = "text/markdown"\n',
-    )
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert 'file = "/projects/foo/docs/README.md"' in tomlkit.dumps(doc)
+    for table_readme in (False, True):
+        original = tomlkit.dumps(
+            document(
+                [spellings[i][0] for i in sources],
+                [spellings[i][0] for i in members],
+                spellings[readme][0],
+                table_readme,
+                ["foo>=1.0"],
+            )
+        )
+        expected = document(
+            [spellings[i][1] for i in sources],
+            [spellings[i][1] for i in members],
+            spellings[readme][1],
+            table_readme,
+            [],
+        )
+        result = prepare_modified_text(
+            original, "override-dependencies", "foo>=1.0", base
+        )
+        assert tomlkit.parse(result) == expected
+        assert (
+            prepare_modified_text(result, "override-dependencies", "foo>=1.0", base)
+            == result
+        )
 
 
 def test_rewrite_paths_no_change_when_no_paths():
@@ -96,24 +142,6 @@ def test_rewrite_paths_sources_without_path_key_left_alone():
     original = (
         "[tool.uv.sources]\n"
         'mypkg = { git = "https://example.com/repo.git", branch = "main" }\n'
-    )
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_leaves_absolute_readme_string_alone():
-    original = '[project]\nreadme = "/abs/README.md"\n'
-    doc = tomlkit.parse(original)
-    rewrite_paths(doc, Path("/projects/foo"))
-    assert tomlkit.dumps(doc) == original
-
-
-def test_rewrite_paths_leaves_absolute_readme_file_alone():
-    original = (
-        "[project.readme]\n"
-        'file = "/abs/docs/README.md"\n'
-        'content-type = "text/markdown"\n'
     )
     doc = tomlkit.parse(original)
     rewrite_paths(doc, Path("/projects/foo"))
@@ -248,20 +276,6 @@ def test_preparing_lock_input_removes_only_equivalent_requirements(
     result = prepare_modified_text(tomlkit.dumps(before), section, target, Path("/"))
     assert tomlkit.parse(result) == expected
     assert prepare_modified_text(result, section, target, Path("/")) == result
-
-
-def test_prepare_modified_text_rewrites_readme_path():
-    original = (
-        '[project]\nreadme = "README.md"\n'
-        '[tool.uv]\noverride-dependencies = ["foo>=1.0"]\n'
-    )
-    result = prepare_modified_text(
-        original,
-        "override-dependencies",
-        "foo>=1.0",
-        Path("/projects/foo"),
-    )
-    assert 'readme = "/projects/foo/README.md"' in result
 
 
 @settings(max_examples=200, derandomize=True, database=None, deadline=None)
