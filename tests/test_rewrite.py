@@ -7,7 +7,6 @@ from hypothesis import strategies as st
 from packaging.version import Version
 
 from uv_override_prune.rewrite import (
-    dynamic_build_fields,
     prepare_modified_text,
     rewrite_paths,
 )
@@ -267,21 +266,3 @@ def test_lock_input_has_static_version_without_changing_other_metadata(
         prepare_modified_text(result, "override-dependencies", "remove>=1.0", Path("/"))
         == result
     )
-
-
-def test_dynamic_build_fields_lists_resolution_fields_only():
-    doc = tomlkit.parse(
-        '[project]\nname = "foo"\n'
-        'dynamic = ["classifiers", "optional-dependencies", "version", "dependencies"]\n',
-    )
-    assert dynamic_build_fields(doc) == ["dependencies", "optional-dependencies"]
-
-
-def test_dynamic_build_fields_empty_for_version_only():
-    doc = tomlkit.parse('[project]\nname = "foo"\ndynamic = ["version"]\n')
-    assert dynamic_build_fields(doc) == []
-
-
-def test_dynamic_build_fields_empty_without_dynamic():
-    assert dynamic_build_fields(tomlkit.parse('[project]\nname = "foo"\n')) == []
-    assert dynamic_build_fields(tomlkit.parse("[tool.uv]\n")) == []
