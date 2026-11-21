@@ -1,6 +1,7 @@
 from pathlib import Path
 
-import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 from packaging.version import Version
 
 from uv_override_prune.analyze import Result
@@ -30,73 +31,70 @@ override-dependencies = ["httpcore>=1.0"]
 """
 
 
-def _entry(section: str, entry: str, status: str) -> EntryResult:
-    return EntryResult(
-        section=section,
-        entry=entry,
-        result=Result(status=status, value=""),
+REPORT_ROWS = st.lists(
+    st.tuples(
+        st.integers(0, 20),
+        st.sampled_from(["override-dependencies", "constraint-dependencies"]),
+        st.sampled_from(["foo>=1.0", "bar>=2.0", "baz>=3.0"]),
+        st.text(max_size=20),
+    ),
+    max_size=8,
+)
+
+
+@settings(max_examples=200, derandomize=True, database=None, deadline=None)
+@example(prunable=[], kept=[], skipped=[], errors=[])
+@example(
+    prunable=[
+        (3, "override-dependencies", "foo>=1.0", "2.0"),
+        (1, "constraint-dependencies", "bar>=2.0", "3.0"),
+        (2, "override-dependencies", "foo>=1.0", "(duplicate)"),
+    ],
+    kept=[(0, "constraint-dependencies", "foo>=1.0", "1.0")],
+    skipped=[(4, "override-dependencies", "baz>=3.0", "(has-marker)")],
+    errors=[(5, "constraint-dependencies", "baz>=3.0", "lock failed")],
+)
+@example(
+    prunable=[(0, "override-dependencies", "foo>=1.0", "2.0")],
+    kept=[],
+    skipped=[],
+    errors=[],
+)
+@given(prunable=REPORT_ROWS, kept=REPORT_ROWS, skipped=REPORT_ROWS, errors=REPORT_ROWS)
+def test_audit_report_preserves_outcomes_and_failure_priority(
+    prunable, kept, skipped, errors
+):
+    def ordered(status, rows):
+        return sorted(
+            [
+                (rank, EntryResult(section, raw, Result(status=status, value=value)))
+                for rank, section, raw, value in rows
+            ],
+            key=lambda row: row[0],
+        )
+
+    prune_rows = ordered("prune", prunable)
+    error_rows = ordered("error", errors)
+    entries = tuple(
+        entry
+        for _, entry in sorted(
+            prune_rows + ordered("keep", kept) + ordered("skip", skipped) + error_rows,
+            key=lambda row: row[0],
+        )
     )
+    expected_prunable = [entry for _, entry in prune_rows]
+    expected_errors = [entry for _, entry in error_rows]
+    expected_sections: dict[str, list[str]] = {}
+    for entry in expected_prunable:
+        expected_sections.setdefault(entry.section, []).append(entry.entry)
 
-
-def test_entry_result_exposes_status():
-    er = EntryResult(
-        section="override-dependencies",
-        entry="foo>=1.0",
-        result=Result(status="prune", value="2.0"),
-    )
-    assert er.status == "prune"
-
-
-def test_audit_report_prunable_filters():
-    report = AuditReport(
-        entries=(
-            _entry("override-dependencies", "foo>=1.0", "prune"),
-            _entry("override-dependencies", "bar>=2.0", "keep"),
-            _entry("constraint-dependencies", "baz>=3.0", "prune"),
-            _entry("override-dependencies", "qux>=4.0", "skip"),
-        ),
-    )
-    assert [e.entry for e in report.prunable()] == ["foo>=1.0", "baz>=3.0"]
-
-
-def test_audit_report_prunable_empty_when_none():
-    report = AuditReport(
-        entries=(
-            _entry("override-dependencies", "bar>=2.0", "keep"),
-            _entry("override-dependencies", "qux>=4.0", "skip"),
-        ),
-    )
-    assert report.prunable() == []
-
-
-def test_audit_report_by_section_groups_by_field():
-    report = AuditReport(
-        entries=(
-            _entry("override-dependencies", "foo>=1.0", "prune"),
-            _entry("constraint-dependencies", "baz>=3.0", "prune"),
-            _entry("override-dependencies", "qux>=4.0", "prune"),
-            _entry("override-dependencies", "bar>=2.0", "keep"),
-        ),
-    )
-    assert report.by_section() == {
-        "override-dependencies": ["foo>=1.0", "qux>=4.0"],
-        "constraint-dependencies": ["baz>=3.0"],
-    }
-
-
-def test_audit_report_by_section_omits_sections_with_no_prunable():
-    report = AuditReport(
-        entries=(
-            _entry("override-dependencies", "foo>=1.0", "prune"),
-            _entry("constraint-dependencies", "baz>=3.0", "keep"),
-        ),
-    )
-    assert report.by_section() == {"override-dependencies": ["foo>=1.0"]}
-
-
-def test_audit_report_by_section_empty_when_no_prunable():
-    report = AuditReport(entries=())
-    assert report.by_section() == {}
+    report = AuditReport(entries=entries)
+    assert report.prunable() == expected_prunable
+    assert report.errors() == expected_errors
+    assert report.by_section() == expected_sections
+    assert report.exit_code(fixed=False) == (2 if errors else int(bool(prunable)))
+    assert report.exit_code(fixed=True) == (2 if errors else 0)
+    assert report.entries == entries
 
 
 def test_evaluate_entry_skips_non_lower_bound_with_descriptive_value():
@@ -146,39 +144,6 @@ def test_evaluate_section_prunes_later_duplicate_without_evaluating_it():
         "(duplicate)",
         "(non-lower-bound)",
     ]
-
-
-def test_audit_report_errors():
-    report = AuditReport(
-        entries=(
-            _entry("override-dependencies", "foo>=1.0", "prune"),
-            _entry("override-dependencies", "bar>=2.0", "error"),
-            _entry("constraint-dependencies", "baz>=3.0", "error"),
-        )
-    )
-    assert [e.entry for e in report.errors()] == ["bar>=2.0", "baz>=3.0"]
-
-
-@pytest.mark.parametrize(
-    "statuses, fixed, expected",
-    [
-        ([], False, 0),
-        (["keep", "skip"], False, 0),
-        (["prune"], False, 1),
-        (["prune"], True, 0),
-        (["error"], False, 2),
-        (["prune", "error"], False, 2),
-        (["prune", "error"], True, 2),
-    ],
-)
-def test_audit_report_exit_code(statuses, fixed, expected):
-    report = AuditReport(
-        entries=tuple(
-            _entry("override-dependencies", f"pkg{i}>=1.0", s)
-            for i, s in enumerate(statuses)
-        )
-    )
-    assert report.exit_code(fixed=fixed) == expected
 
 
 def test_load_targets_reads_lockfile_next_to_pyproject(tmp_path):
