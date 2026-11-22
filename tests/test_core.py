@@ -379,3 +379,37 @@ override-dependencies = ["idna>=3.0"]
     report = audit(tmp_path / "pyproject.toml")
 
     assert [e.status for e in report.entries] == ["prune"]
+
+
+def test_audit_reports_a_lock_that_fails_as_an_error(tmp_path):
+    """Runs the real `uv lock`, which fails before contacting an index
+    because the path source does not exist.
+
+    An entry whose lock fails was not evaluated, so it must not read as
+    prunable, and the audit must not pass with or without --fix.
+    """
+    original = """\
+[project]
+name = "exp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["missing-local"]
+
+[tool.uv]
+override-dependencies = ["unused-demo>=1.0"]
+constraint-dependencies = ["unused-demo>=1.0"]
+
+[tool.uv.sources]
+missing-local = { path = "missing-local" }
+"""
+    (tmp_path / "pyproject.toml").write_text(original)
+
+    report = audit(tmp_path / "pyproject.toml")
+
+    assert report.entries == tuple(
+        EntryResult(section, "unused-demo>=1.0", Result("error", "lock failed"))
+        for section in ("override-dependencies", "constraint-dependencies")
+    )
+    assert report.exit_code(fixed=False) == 2
+    assert report.exit_code(fixed=True) == 2
+    assert (tmp_path / "pyproject.toml").read_text() == original
